@@ -1,0 +1,68 @@
+Many users of numerical methods, including physicists, financial
+engineers and machine learning practitioners, have dipped their toes
+in the functional waters only to find, to mix metaphors, that it is
+not to their taste. In the functional community, with some notable
+exceptions, numerical computations are not given a high profile and
+few worked examples are available with the result that, when a user of
+numerical methods implements something, it is often done using lists,
+almost guaranteeing poor performance and resultant distaste.
+
+Functional programmers on the other hand are also reluctant to dip
+their toes in the numerical methods waters, even though there are many
+features of Haskell which make it an excellent vehicle for such
+adventures; individuals who have mastered category theory should have
+no fear of other fields of mathematics! For example, implementing
+neural networks is significantly easier using automatic
+differentiation in Haskell than using the traditional method of
+backpropagation, solving partial differential equations using
+computational stencils can be done just by writing down the stencil in
+a very transparent way and power series approximations such as
+Legendre polynomials are straightforward using Haskell's lazy
+evaluation.
+
+This book is intended to show that one can have one's cake and eat it
+in the sense that one can obtain the all benefits of functional
+programming applied to numerical problems without sacrificing much in
+the way of performance. Hopefully, this will appeal to anyone who
+falls into either of the above categories. Through an extended series
+of worked examples, it shows that it is possible to have both a
+representation in code of a problem that is close to the way one would
+express it mathematically without sacrificing performance. In
+particular, some of the examples can be made to run on multiple
+processors in parallel with little or no change. In each of the
+examples, an exposition is given of the theory behind it; this is
+certainly not a pure numerical methods cookbook. In addition, each
+example is coded in Haskell, the code is explained, including the main
+Haskell numerical libraries, and the results of the output are
+presented together with performance measurements.
+
+There are many ways in which this book could be organised: by Haskell
+library, by numerical technique or by discipline to which the
+techniques and libraries can be applied. In the end, we opted to
+create three sections: finite difference methods, Monte Carlo methods
+and other methods. Within these sections, we intermingle specific
+methods and their theory with applications of Haskell libraries to
+specific examples which motivate the methods. Hopefully the reader
+will find (at least some of) the applications as fascinating and as
+practical as we have and leave with an appreciation of how a
+particular technique and Haskell library can be applied to a problem
+they have at hand.
+
+A word is in order on what constitues a functional
+language. Currently, many languages claim they are functional by which
+they mean functions are first class. A more demanding definition would
+include static typing and no mutability or side effect which then
+allow reasoning about programs in a straightforward way. For us that
+means Haskell.
+
+After 25 years of developement, it might be supposed that Haskell is a
+mature language. In many senses it is, but the language, the principal
+compiler ghc and its libraries continue to develop at a rapid
+rate. Even a few years ago, one could not have hoped to write a book
+such as this and many pundits maintained that functional programming
+and Haskell in particular would never be used for real
+applications. There is still a long way to go but it seems, for now at
+any rate, the future is functional. Given this rapid rate of progress,
+it is to be hoped that even better techniques for numerical methods in
+Haskell will appear in the near future.
+
