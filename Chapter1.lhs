@@ -19,17 +19,20 @@ dia = example 12
 ```
 
 Can we confirm our intuition somehow? Suppose that the strategy has
-worked and the grasshopper is now to be found with equal probability on any
-hour. Then at the last jump, the grasshopper must either have been at the
-hour before the one it is now on or it must have been at the hour
-after the one it is now on. Let us denote the probability that the
-grasshopper is on hour $n$ by $\pi(n)$.
+worked and the grasshopper is now to be found with equal probability
+on any hour. Then at the last jump, the grasshopper must either have
+been at the hour before the one it is now on or it must have been at
+the hour after the one it is now on. Let us denote the probability
+that the grasshopper is on hour $n$ by $\pi(n)$ and the (conditional)
+probability that the grasshopper jumps to state $n$ given it was in
+state $m$ by $p(n \, |\, m)$. Then we have
 
 $$
 \pi'(n) = p(n \, |\, n - 1)\pi(n - 1) + p(n \, |\, n + 1)\pi(n + 1)
 $$
 
-Substituting in
+Substituting in where $N$ is a normalising constant (12 in this case)
+we obtain
 
 $$
 \pi'(n) = \frac{1}{2}\frac{1}{N} + \frac{1}{2}\frac{1}{N} = \frac{1}{N}
@@ -37,8 +40,7 @@ $$
 
 This tells us that the required distribution is a fixed point of the
 grasshopper's strategy. But does the strategy actually converge to the
-fixed point?
-
+fixed point? Let us perform an experiment.
 
 First we import some modules from
 [hmatrix](http://hackage.haskell.org/package/hmatrix).
