@@ -101,6 +101,7 @@ If we allow the grasshopper to hop 1000 times then we see that it is
 equally likely to be found on any hour hand with a 20% probability.
 
     [ghci]
+    startOnOne
     eqProbsMat
     take 1 $ drop 1000  $ iterate (<> eqProbsMat) startOnOne
 
