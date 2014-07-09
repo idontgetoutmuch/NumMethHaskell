@@ -2,6 +2,10 @@
 % Dominic Steinitz
 % 3rd July 2014
 
+---
+bibliography: Kalman.bib
+---
+
 Noisy Observation
 =================
 
@@ -141,6 +145,7 @@ $$
 > import Control.Monad
 > import Data.Random.Source.PureMT
 > import Data.Random
+> import Data.Random.Distribution.Binomial
 > import Control.Monad.State
 > import qualified Control.Monad.Writer as W
 
@@ -223,3 +228,31 @@ $$
 w_i = \frac{1}{N} \frac{p(\boldsymbol{\Theta_i} \, \vert \, x_1, \ldots x_T)}
                        {\pi(\boldsymbol{\Theta_i} \, \vert \, x_1, \ldots x_T)}
 $$
+
+We follow [Alex
+Cook](http://blog.nus.edu.sg/alexcook/teaching/sph6004/) and use the
+example from [@citeulike:5986027].
+
+> xv, nv :: Int
+> xv = 51
+> nv = 8197
+
+> sampleUniform :: RVarT (W.Writer [Double]) ()
+> sampleUniform = do
+>   x <- rvarT StdUniform
+>   lift $ W.tell [x]
+>   return ()
+
+> runUniform :: Int -> [Double]
+> runUniform n =
+>   snd $
+>   W.runWriter $
+>   evalStateT (sample (replicateM n sampleUniform))
+>              (pureMT 2)
+
+> weightsRaw = map (\p -> pdf (Binomial nv p) xv) (runUniform 100)
+> weightsSum = sum weightsRaw
+> weights = map (/ weightsSum) weightsRaw
+
+Bibliography
+============
