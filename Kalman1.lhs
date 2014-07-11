@@ -6,6 +6,8 @@
 bibliography: Kalman.bib
 ---
 
+\newcommand{\condprob} [3] {#1 \left( #2 \,\vert\, #3 \right)}
+
 Noisy Observation
 =================
 
@@ -142,14 +144,21 @@ $$
 > {-# OPTIONS_GHC -fno-warn-missing-methods #-}
 > {-# OPTIONS_GHC -fno-warn-orphans         #-}
 
+> {-# LANGUAGE FlexibleContexts             #-}
+
 > import Control.Monad
 > import Data.Random.Source.PureMT
 > import Data.Random
 > import Data.Random.Distribution.Binomial
+> import Data.Random.Distribution.Multinomial
 > import Control.Monad.State
 > import qualified Control.Monad.Writer as W
+> import Control.Monad.Loops
 
 > import Formatting
+
+
+> import Debug.Trace
 
 > sampleImportance :: RVarT (W.Writer [Double]) ()
 > sampleImportance = do
@@ -199,34 +208,34 @@ calculate the expectation of some arbitrary function $f$ of the
 parameters.
 
 $$
-{\cal{E}}(f(\boldsymbol{\theta}) \,\vert\, x_1, \ldots x_T) =
-\int_\Omega f(\boldsymbol{\theta}) p(\boldsymbol{\theta} \, \vert \, x_1, \ldots x_T) \,\mathrm{d}\boldsymbol{\theta}
+{\cal{E}}(f({x}) \,\vert\, y_1, \ldots y_T) =
+\int_\Omega f({x}) p({x} \, \vert \, y_1, \ldots y_T) \,\mathrm{d}{x}
 $$
 
 As before we can re-write this
 
 $$
-\int_\Omega f(\boldsymbol{\theta}) p(\boldsymbol{\theta} \, \vert \, x_1, \ldots x_T) \,\mathrm{d}\boldsymbol{\theta} =
-\int_\Omega f(\boldsymbol{\theta}) \frac{p(\boldsymbol{\theta} \, \vert \, x_1, \ldots x_T)}
-                                 {\pi(\boldsymbol{\theta} \, \vert \, x_1, \ldots x_T)}
-     \pi(\boldsymbol{\theta} \, \vert \, x_1, \ldots x_T) \,\mathrm{d}\boldsymbol{\theta}
+\int_\Omega f({x}) p({x} \, \vert \, y_1, \ldots y_T) \,\mathrm{d}{x} =
+\int_\Omega f({x}) \frac{p({x} \, \vert \, y_1, \ldots y_T)}
+                                 {\pi({x} \, \vert \, y_1, \ldots y_T)}
+     \pi({x} \, \vert \, y_1, \ldots y_T) \,\mathrm{d}{x}
 $$
 
-We can now sample $\Theta \sim \pi(\boldsymbol{\theta} \, \vert \,
-x_1, \ldots x_T)$ repeatedly to obtain
+We can now sample $X^{(i)} \sim \pi({x} \, \vert \,
+y_1, \ldots y_T)$ repeatedly to obtain
 
 $$
-{\cal{E}}(f(\boldsymbol{\theta}) \,\vert\, x_1, \ldots x_T) \approx \frac{1}{N}\sum_1^N
-f(\boldsymbol{\Theta_i}) \frac{p(\boldsymbol{\Theta_i} \, \vert \, x_1, \ldots x_T)}
-                            {\pi(\boldsymbol{\Theta_i} \, \vert \, x_1, \ldots x_T)} =
-\sum_1^N w_if(\boldsymbol{\Theta_i})
+{\cal{E}}(f({x}) \,\vert\, y_1, \ldots y_T) \approx \frac{1}{N}\sum_1^N
+f({X^{(i)}}) \frac{p({X^{(i)}} \, \vert \, y_1, \ldots y_T)}
+                            {\pi({X^{(i)}} \, \vert \, y_1, \ldots y_T)} =
+\sum_1^N w_if({X^{(i)}})
 $$
 
 where the weights $w_i$ are defined as before by
 
 $$
-w_i = \frac{1}{N} \frac{p(\boldsymbol{\Theta_i} \, \vert \, x_1, \ldots x_T)}
-                       {\pi(\boldsymbol{\Theta_i} \, \vert \, x_1, \ldots x_T)}
+w_i = \frac{1}{N} \frac{p({X^{(i)}} \, \vert \, y_1, \ldots y_T)}
+                       {\pi({X^{(i)}} \, \vert \, y_1, \ldots y_T)}
 $$
 
 We follow [Alex
@@ -243,16 +252,256 @@ example from [@citeulike:5986027].
 >   lift $ W.tell [x]
 >   return ()
 
-> runUniform :: Int -> [Double]
-> runUniform n =
->   snd $
->   W.runWriter $
->   evalStateT (sample (replicateM n sampleUniform))
->              (pureMT 2)
+> sampleSize = 10000
 
-> weightsRaw = map (\p -> pdf (Binomial nv p) xv) (runUniform 100)
+> pv = runSampler sampleUniform 2 sampleSize
+
+> weightsRaw = map (\p -> pdf (Binomial nv p) xv) pv
 > weightsSum = sum weightsRaw
 > weights = map (/ weightsSum) weightsRaw
+
+> meanPv = sum $ zipWith (*) pv weights
+
+But
+
+    [ghci]
+    length $ filter (>= 1e-6) weights
+
+so we may not be getting a very good estimate.
+
+> sampleNormal :: RVarT (W.Writer [Double]) ()
+> sampleNormal = do
+>   let xvd   = fromIntegral xv
+>       nvd   = fromIntegral nv
+>       mu    = xvd / nvd
+>       sigma = (sqrt (xvd / nvd) * (1 - xvd / nvd)) / nvd
+>   x <- rvarT $ Normal mu sigma
+>   lift $ W.tell [x]
+>   return ()
+
+> runSampler :: RVarT (W.Writer [Double]) () -> Int -> Int -> [Double]
+> runSampler sampler seed n =
+>   snd $
+>   W.runWriter $
+>   evalStateT (sample (replicateM n sampler))
+>              (pureMT (fromIntegral seed))
+
+> pvC = runSampler sampleNormal 2 sampleSize
+
+> weightsRawC = map (\p -> pdf (Binomial nv p) xv) pvC
+> weightsSumC = sum weightsRawC
+> weightsC = map (/ weightsSumC) weightsRawC
+
+> meanPvC = sum $ zipWith (*) pvC weightsC
+
+    [ghci]
+    length $ filter (>= 1e-6) weightsC
+
+Sequential Importance Sampling
+==============================
+
+Now let us generalize our Bayesian model and allow
+${X}_i$ to depend on ${X}_{i-1}$ and
+${Y}_i$ depend on ${X}_i$, that is
+
+$$
+\begin{aligned}
+{X}_i &\sim \condprob{p}{{x}_i}{{x}_{i-1}} \\
+{Y}_i &\sim \condprob{p}{{y}_i}{{x}_{i}} \\
+\end{aligned}
+$$
+
+Recall in our original model we had
+
+$$
+\begin{aligned}
+{X}_i &\sim p({{x}}) \\
+{Y}_i &\sim \condprob{p}{{y}_i}{{x}} \\
+\end{aligned}
+$$
+
+And, as before, by Bayes and conditional independence we also had
+
+$$
+\begin{aligned}
+\condprob{p}{{x}}{{y}_1, \ldots, {y}_T} & \propto
+p({x})\condprob{p}{{y}_1, \ldots, {y}_T}{{x}} \\
+&  =p({x})\prod_{i=1}^T\condprob{p}{{y}_i}{{x}} \\
+& = p({x})\condprob{p}{{y}_T}{{x}}\prod_{i=1}^{T-1}\condprob{p}{{y}_i}{{x}} \\
+& \propto \condprob{p}{{y}_T}{{x}}\condprob{p}{{x}}{{y}_1, \ldots, {y}_{T-1}}
+\end{aligned}
+$$
+
+In our new and generalized model we have a whole sequence of
+parameters for which we wish to find the posterior distribution.
+
+$$
+\condprob{p}{{x}_0,\ldots,{x}_T}{{y}_1,\ldots,{y}_T}
+$$
+
+Applying Bayes and the restrictions of our model that the parameters are Markovian
+
+$$
+\begin{aligned}
+\condprob{p}{{x}_0,\ldots,{x}_T}{{y}_1,\ldots,{y}_T}
+& \propto
+\condprob{p}{{y}_T}{{x}_0,\ldots,{x}_T, {y}_1,\ldots,{y}_{T-1}}
+\condprob{p}{{x}_0,\ldots,{x}_T}{{y}_1,\ldots,{y}_{T-1}} \\
+& =
+\condprob{p}{{y}_T}{{x}_T}
+\condprob{p}{{x}_T}{{x}_0,\ldots,{x}_{T-1}, {y}_1,\ldots,{y}_{T-1}}\condprob{p}{{x}_0,\ldots,{x}_{T-1}}{{y}_1,\ldots,{y}_{T-1}} \\
+& =
+\condprob{p}{{y}_T}{{x}_T}
+\condprob{p}{{x}_T}{{x}_{T-1}}\condprob{p}{{x}_0,\ldots,{x}_{T-1}}{{y}_1,\ldots,{y}_{T-1}} \\
+\end{aligned}
+$$
+
+Now let us take an importance distribution
+$\condprob{\pi}{x_0,\ldots,x_T}{y_1,\ldots,y_T}$ and as before compute
+the un-normalized weights by substituting in the posterior we have
+just calculated.
+
+$$
+w_T^{(i)} = \frac
+{\condprob{p}{{y}_T}{{X_T^{(i)}}}
+ \condprob{p}{{X_T^{(i)}}}{{X_{T-1}^{(i)}}}\condprob{p}{{X_0^{(i)}},\ldots,{X_{T-1}^{(i)}}}{{y}_1,\ldots,{y}_{T-1}}
+}
+{\condprob{\pi}{X^{(i)}_0,\ldots,X^{(i)}_T}{y_1,\ldots,y_T}}
+$$
+
+The problem now is how to select an appropriate importance distribution.
+Suppose we can do this recursively.
+
+$$
+{\condprob{\pi}{x_0,\ldots,x_T}{y_1,\ldots,y_T}} =
+{\condprob{\pi}{x_T}{x_0,\ldots,x_{T-1}, y_1,\ldots,y_T}}
+{\condprob{\pi}{x_0,\ldots,x_{T-1}}{y_1,\ldots,y_{T-1}}}
+$$
+
+then
+
+$$
+\begin{aligned}
+w_T^{(i)} & = \frac
+{\condprob{p}{{y}_T}{{X_T^{(i)}}}
+ \condprob{p}{{X_T^{(i)}}}{{X_{T-1}^{(i)}}}
+}
+{
+{\condprob{\pi}{X_T^{(i)}}{X_0^{(i)},\ldots,X_{T-1}^{(i)}, y_1,\ldots,y_T}}
+}
+\frac
+\condprob{p}{{X_0^{(i)}},\ldots,{X_{T-1}^{(i)}}}{{y}_1,\ldots,{y}_{T-1}}
+{\condprob{\pi}{X_0^{(i)},\ldots,X_{T-1}^{(i)}}{y_1,\ldots,y_{T-1}}} \\
+& =
+\frac
+{\condprob{p}{{y}_T}{{X_T^{(i)}}}
+ \condprob{p}{{X_T^{(i)}}}{{X_{T-1}^{(i)}}}
+}
+{
+{\condprob{\pi}{X_T^{(i)}}{X_0^{(i)},\ldots,X_{T-1}^{(i)}, y_1,\ldots,y_T}}
+}w^{(i)}_{T-1}
+\end{aligned}
+$$
+
+We can start the whole sampling process by sampling $X_0^{(i)} \sim
+p(x_0)$ from the prior and setting $w_0^{(i)} = 1/N$ where $N$ is the
+total number of samples.
+
+Further, if we choose ${\condprob{\pi}{X_T}{X_0,\ldots,X_{T-1},
+y_1,\ldots,y_T}} = {\condprob{\pi}{X_T}{X_{T-1}, y_1,\ldots,y_T}}$ then we
+do not need to keep the whole history of parameters
+$X_0^{(i)},\ldots,X_{T-1}^{(i)}$ only the previous parameters.
+
+This simplifies the recursive weight equations
+
+$$
+\begin{aligned}
+w_T^{(i)}
+& =
+\frac
+{\condprob{p}{{y}_T}{{X_T^{(i)}}}
+ \condprob{p}{{X_T^{(i)}}}{{X_{T-1}^{(i)}}}
+}
+{
+{\condprob{\pi}{X_T^{(i)}}{X_{T-1}^{(i)}, y_1,\ldots,y_T}}
+}w^{(i)}_{T-1}
+\end{aligned}
+$$
+
+If we further take $\condprob{\pi}{X_T^{(i)}}{X_{T-1}^{(i)},
+y_1,\ldots,y_T}$ to be $\condprob{p}{{X_T^{(i)}}}{{X_{T-1}^{(i)}}}$
+weighted by $w_{T-1}^{(i)}$ then
+
+$$
+\begin{aligned}
+w_T^{(i)}
+& =
+\condprob{p}{{y}_T}{{\tilde{X}_T^{(i)}}}
+\end{aligned}
+$$
+
+where
+
+$$
+\tilde{X}_T \sim \sum_{i=1}^N w_{T-1}^{(i)} \condprob{p}{X_T}{X_{T-1}^{(i)}}
+$$
+
+This second sampling according to the weights is known as **resampling**.
+
+> muPrior = 0.0
+> sigmaPrior = 1.0
+> muLikelihood = 0.0
+> cs = repeat 1.0
+>
+> bigN = 400
+
+> normalPdf :: Double -> Double -> Double -> Double
+> normalPdf mu sigma x =
+>   (recip (sqrt (2 * pi * sigma2))) * (exp ((-(x - mu)^2) / (2 * sigma2)))
+>   where
+>     sigma2 = sigma^2
+
+> sir :: [(Double, Double)] -> Double -> Double ->
+>        RVarT (W.Writer [([Double], [Int])]) [(Double, Double)]
+> sir weightsMusPrev y sigma = do
+>   let n           = length weightsMusPrev
+>       weightsPrev = map fst weightsMusPrev
+>
+>   nParticless <- rvarT $ Multinomial weightsPrev n
+>
+>   let musPrev  = map snd weightsMusPrev
+>   let _musTilde = concatMap (\i -> replicate (nParticless!!i) (musPrev!!i)) [0..n - 1]
+>
+>   musNew <- return musPrev
+>
+>   let weightsNew = map (\i -> normalPdf (musNew!!i) sigma y) [0..n - 1]
+>
+>   lift $ W.tell [(musNew, nParticless)]
+>   return (zip weightsNew musNew)
+
+> initSir :: Int -> RVarT (W.Writer [([Double], [Int])]) [(Double, Double)]
+> initSir n = do
+>   mus <- replicateM n (rvarT $ Normal muPrior sigmaPrior)
+>   lift $ W.tell [(mus, replicate n 1)]
+>   return (zip (replicate n (recip (fromIntegral n))) mus)
+
+> createObs :: Int -> RVar [Double]
+> createObs n = do
+>   x <- rvarT (Normal muPrior sigmaPrior)
+>   trace (show x) $ return ()
+>   ys <- mapM (\c -> rvarT (Normal x c)) (take n cs)
+>   return ys
+
+> obss = evalState (sample (createObs 10)) (pureMT 2)
+
+> testPF :: RVarT (W.Writer [([Double], [Int])]) [(Double, Double)]
+> testPF = do
+>   wms <- initSir bigN
+>   let sirs = zipWith (\obs c -> (\wm -> sir wm obs c)) obss cs
+>   foldr (>=>) return sirs wms
+
+> runPF :: [([Double], [Int])]
+> runPF = snd (W.runWriter (evalStateT (sample testPF) (pureMT 2)))
 
 Bibliography
 ============
