@@ -146,6 +146,8 @@ $$
 
 > {-# LANGUAGE FlexibleContexts             #-}
 
+> module Filtering where
+
 > import Control.Monad
 > import Data.Random.Source.PureMT
 > import Data.Random
@@ -153,12 +155,7 @@ $$
 > import Data.Random.Distribution.Multinomial
 > import Control.Monad.State
 > import qualified Control.Monad.Writer as W
-> import Control.Monad.Loops
 
-> import Formatting
-
-
-> import Debug.Trace
 
 > sampleImportance :: RVarT (W.Writer [Double]) ()
 > sampleImportance = do
@@ -180,6 +177,7 @@ $$
 We can run this 10,000 times to get an estimate.
 
     [ghci]
+    import Formatting
     format (fixed 2) (sum (runImportance 10000) / 10000)
 
 Since we know that the $n$-th moment of the exponential distribution
@@ -252,14 +250,22 @@ example from [@citeulike:5986027].
 >   lift $ W.tell [x]
 >   return ()
 
+> sampleSize :: Int
 > sampleSize = 10000
 
+> pv :: [Double]
 > pv = runSampler sampleUniform 2 sampleSize
 
+> weightsRaw :: [Double]
 > weightsRaw = map (\p -> pdf (Binomial nv p) xv) pv
+
+> weightsSum :: Double
 > weightsSum = sum weightsRaw
+
+> weights :: [Double]
 > weights = map (/ weightsSum) weightsRaw
 
+> meanPv :: Double
 > meanPv = sum $ zipWith (*) pv weights
 
 But
@@ -286,12 +292,19 @@ so we may not be getting a very good estimate.
 >   evalStateT (sample (replicateM n sampler))
 >              (pureMT (fromIntegral seed))
 
+> pvC :: [Double]
 > pvC = runSampler sampleNormal 2 sampleSize
 
+> weightsRawC :: [Double]
 > weightsRawC = map (\p -> pdf (Binomial nv p) xv) pvC
+
+> weightsSumC :: Double
 > weightsSumC = sum weightsRawC
+
+> weightsC :: [Double]
 > weightsC = map (/ weightsSumC) weightsRawC
 
+> meanPvC :: Double
 > meanPvC = sum $ zipWith (*) pvC weightsC
 
     [ghci]
@@ -448,12 +461,16 @@ $$
 
 This second sampling according to the weights is known as **resampling**.
 
+> muPrior, sigmaPrior, muLikelihood :: Double
 > muPrior = 0.0
 > sigmaPrior = 1.0
 > muLikelihood = 0.0
+
+> cs :: [Double]
 > cs = repeat 1.0
->
-> bigN = 400
+
+> bigN :: Int
+> bigN = 100
 
 > normalPdf :: Double -> Double -> Double -> Double
 > normalPdf mu sigma x =
@@ -462,46 +479,56 @@ This second sampling according to the weights is known as **resampling**.
 >     sigma2 = sigma^2
 
 > sir :: [(Double, Double)] -> Double -> Double ->
->        RVarT (W.Writer [([Double], [Int])]) [(Double, Double)]
+>        RVarT (W.Writer [Double]) [(Double, Double)]
 > sir weightsMusPrev y sigma = do
 >   let n           = length weightsMusPrev
 >       weightsPrev = map fst weightsMusPrev
 >
+>   let musPrev  = map snd weightsMusPrev
+>   let m = sum $ zipWith (*) weightsPrev musPrev
+>
 >   nParticless <- rvarT $ Multinomial weightsPrev n
 >
->   let musPrev  = map snd weightsMusPrev
->   let _musTilde = concatMap (\i -> replicate (nParticless!!i) (musPrev!!i)) [0..n - 1]
+>   let musTilde = concatMap (\i -> replicate (nParticless!!i) (musPrev!!i)) [0..n - 1]
 >
->   musNew <- return musPrev
+>   musNew <- return musTilde
 >
 >   let weightsNew = map (\i -> normalPdf (musNew!!i) sigma y) [0..n - 1]
+>       sumWeights = sum weightsNew
+>       weightsNorm = map (/ sumWeights) weightsNew
 >
->   lift $ W.tell [(musNew, nParticless)]
->   return (zip weightsNew musNew)
+>   lift $ W.tell [m]
+>   return (zip weightsNorm musNew)
 
-> initSir :: Int -> RVarT (W.Writer [([Double], [Int])]) [(Double, Double)]
+> initSir :: Int -> RVarT (W.Writer [Double]) [(Double, Double)]
 > initSir n = do
 >   mus <- replicateM n (rvarT $ Normal muPrior sigmaPrior)
->   lift $ W.tell [(mus, replicate n 1)]
->   return (zip (replicate n (recip (fromIntegral n))) mus)
+>   let weights = replicate n (recip (fromIntegral n))
+>   let m = sum $ zipWith (*) weights mus
+>   lift $ W.tell [m]
+>   return (zip weights mus)
 
-> createObs :: Int -> RVar [Double]
+> createObs :: Int -> RVar (Double, [Double])
 > createObs n = do
 >   x <- rvarT (Normal muPrior sigmaPrior)
->   trace (show x) $ return ()
 >   ys <- mapM (\c -> rvarT (Normal x c)) (take n cs)
->   return ys
+>   return (x, ys)
 
-> obss = evalState (sample (createObs 10)) (pureMT 2)
+> obss :: (Double, [Double])
+> obss = evalState (sample (createObs 100)) (pureMT 2)
 
-> testPF :: RVarT (W.Writer [([Double], [Int])]) [(Double, Double)]
+> testPF :: RVarT (W.Writer [Double]) [(Double, Double)]
 > testPF = do
 >   wms <- initSir bigN
->   let sirs = zipWith (\obs c -> (\wm -> sir wm obs c)) obss cs
+>   let sirs = zipWith (\obs c -> (\wm -> sir wm obs c)) (snd obss) cs
 >   foldr (>=>) return sirs wms
 
-> runPF :: [([Double], [Int])]
-> runPF = snd (W.runWriter (evalStateT (sample testPF) (pureMT 2)))
+> runPF :: ([(Double, Double)], [Double])
+> runPF = W.runWriter (evalStateT (sample testPF) (pureMT 2))
+
+```{.dia width='900'}
+dia = image "diagrams/SingleRvNoisy.png" 1.0 1.0
+```
 
 Bibliography
 ============
