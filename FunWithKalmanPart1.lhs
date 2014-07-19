@@ -33,8 +33,8 @@ $$
 The standard notation in Bayesian statistics is to denote the
 parameters of interest as $\theta \in \mathbb{R}^p$ and the
 observations as $x \in \mathbb{R}^n$. For reasons that will become
-apparent, let us change notation and label the parameters as $x$ and
-the observations as $y$.
+apparent in later blog posts, let us change notation and label the
+parameters as $x$ and the observations as $y$.
 
 
 Let us take a very simple example of a prior $X \sim {\cal{N}}(0,
@@ -109,7 +109,51 @@ $$
 
 Hence $M$ is bounded in $L^2$ and therefore converges in $L^2$ and
 almost surely to $M_\infty \triangleq {\cal{E}}(X \,\vert\,
-{\cal{F}}_\infty)$.
+{\cal{F}}_\infty)$. The noteworthy point is that if $M_\infy = X$ if
+and only if $\hat{\sigma}_i$ converges to 0. Explicitly we have
+
+$$
+\hat{\sigma}_i = \frac{1}{\sigma^} + \sum_{k=1}^i\frac{1}{c_k^2}
+$$
+
+which explains why we took the observations to have varying and known
+variances.
+
+> {-# OPTIONS_GHC -Wall                     #-}
+> {-# OPTIONS_GHC -fno-warn-name-shadowing  #-}
+> {-# OPTIONS_GHC -fno-warn-type-defaults   #-}
+> {-# OPTIONS_GHC -fno-warn-unused-do-bind  #-}
+> {-# OPTIONS_GHC -fno-warn-missing-methods #-}
+> {-# OPTIONS_GHC -fno-warn-orphans         #-}
+
+> import Data.Random.Source.PureMT
+> import Data.Random
+> import Control.Monad.State
+
+> var, cSquared :: Double
+> var       = 1.0
+> cSquared  = 1.0
+>
+> createObs :: RVar (Double, [Double])
+> createObs = do
+>   x <- rvar (Normal 0.0 var)
+>   ys <- replicateM 100 $ rvar (Normal x cSquared)
+>   return (x, ys)
+>
+> obs :: (Double, [Double])
+> obs = evalState (sample createObs) (pureMT 2)
+>
+> updateEstimate :: (Double, Double) -> (Double, Double) -> (Double, Double)
+> updateEstimate (xHatPrev, varPrev) (y, cSquared) = (xHatNew, varNew)
+>   where
+>     varNew  = recip (recip varPrev + recip cSquared)
+>     xHatNew = varNew * (y / cSquared + xHatPrev / varPrev)
+>
+> estimates :: [(Double, Double)]
+> estimates = scanl updateEstimate (y, cSquared) (zip ys (repeat cSquared))
+>   where
+>     y  = head $ snd obs
+>     ys = tail $ snd obs
 
 Bibliography
 ============
