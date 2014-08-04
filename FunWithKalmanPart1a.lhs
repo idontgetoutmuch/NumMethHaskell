@@ -18,13 +18,13 @@ are noisy.
 
 $$
 \begin{aligned}
-x_i &= x_{i-1} + \Delta T v_{i-1} + \epsilon^{(x)}_i \\
-v_i &= v_{i-1} + \epsilon^{(v)}_i \\
+x_i &= x_{i-1} + \Delta T v_{i-1} + \psi^{(x)}_i \\
+v_i &= v_{i-1} + \psi^{(v)}_i \\
 y_i &= a_i x_i + \upsilon_i
 \end{aligned}
 $$
 
-where $\epsilon^{(x)}_i, \epsilon^{(v)}_i$ and $\upsilon_i$ are all IID
+where $\psi^{(x)}_i, \psi^{(v)}_i$ and $\upsilon_i$ are all IID
 normal with means of 0 and variances of $\sigma^2_x,
 \sigma^2_v$ and $\sigma^2_y$
 
@@ -32,7 +32,7 @@ We can re-write this as
 
 $$
 \begin{aligned}
-\boldsymbol{x}_i &= \boldsymbol{A}_{i-1}\boldsymbol{x}_{i-1} + \boldsymbol{\epsilon}_{i-1} \\
+\boldsymbol{x}_i &= \boldsymbol{A}_{i-1}\boldsymbol{x}_{i-1} + \boldsymbol{\psi}_{i-1} \\
 \boldsymbol{y}_i &= \boldsymbol{H}_i\boldsymbol{x}_i + \boldsymbol{\upsilon}_i
 \end{aligned}
 $$
@@ -48,10 +48,10 @@ $$
 ,\quad
 \boldsymbol{H}_i =
   \begin{bmatrix}
-    1\\
+    a_i \\
   \end{bmatrix}
 ,\quad
-\boldsymbol{\epsilon}_i \sim {\cal{N}}\big(0,\boldsymbol{\Sigma}^{(x)}_i\big)
+\boldsymbol{\psi}_i \sim {\cal{N}}\big(0,\boldsymbol{\Sigma}^{(x)}_i\big)
 ,\quad
 \boldsymbol{\Sigma}^{(x)}_i =
   \begin{bmatrix}
@@ -179,7 +179,17 @@ $$
 \end{aligned}
 $$
 
-We then obtain the Kalman filter prediction step:
+We further have that
+
+$$
+\begin{aligned}
+{\boldsymbol{X}_i}\,\vert\,{\boldsymbol{Y}_{i-1}} =
+{\boldsymbol{A}_i\boldsymbol{X}_{i-1}\,\vert\,{\boldsymbol{Y}_{i-1}} + \boldsymbol{\Psi}_{i-1}}\,\vert\,{\boldsymbol{Y}_{i-1}} =
+{\boldsymbol{A}_i\boldsymbol{X}_{i-1}\,\vert\,{\boldsymbol{Y}_{i-1}} + \boldsymbol{\Psi}_i}
+\end{aligned}
+$$
+
+We thus obtain the Kalman filter prediction step:
 
 $$
 \begin{aligned}
@@ -192,41 +202,96 @@ $$
 \end{aligned}
 $$
 
-By Bayes, we have
+Further information can be found in [@Boyd:EE363:Online], [@kleeman1996understanding] and [@sarkka2013bayesian].
 
-$$
-\condprob{p}{\boldsymbol{x}_i, \boldsymbol{x}_{i-1}}{\boldsymbol{y}_1,\ldots,\boldsymbol{y}_{i-1}} =
-\condprob{p}{\boldsymbol{x}_i}{\boldsymbol{x}_{i-1}, \boldsymbol{y}_1,\ldots,\boldsymbol{y}_{i-1}}
-\condprob{p}{\boldsymbol{x}_{i-1}}{\boldsymbol{y}_1,\ldots,\boldsymbol{y}_{i-1}}
-$$
+A Haskell Implementation
+========================
 
-By the Markov property of the model we have
+Let us start with a prior normal distribution with a mean position and
+velocity of 0 with large variances and no correlation.
 
-$$
-\condprob{p}{\boldsymbol{x}_i}{\boldsymbol{x}_{i-1}, \boldsymbol{y}_1,\ldots,\boldsymbol{y}_{i-1}}
-=
-\condprob{p}{\boldsymbol{x}_i}{\boldsymbol{x}_{i-1}}
-$$
+> {-# OPTIONS_GHC -Wall                     #-}
+> {-# OPTIONS_GHC -fno-warn-name-shadowing  #-}
+> {-# OPTIONS_GHC -fno-warn-type-defaults   #-}
+> {-# OPTIONS_GHC -fno-warn-unused-do-bind  #-}
+> {-# OPTIONS_GHC -fno-warn-missing-methods #-}
+> {-# OPTIONS_GHC -fno-warn-orphans         #-}
 
-And by the inducton hypothesis we have
+> {-# LANGUAGE DataKinds                    #-}
+> {-# LANGUAGE ScopedTypeVariables          #-}
+> {-# LANGUAGE RankNTypes                   #-}
 
-$$
-\condprob{p}{\boldsymbol{x}_{i-1}}{\boldsymbol{y}_{1}, \ldots, \boldsymbol{y}_{i-1}} =
-{\cal{N}}\big(\boldsymbol{x}_{i-1}; \hat{\boldsymbol{x}}_{i-1}, \hat{\boldsymbol{\Sigma}}_{i-1}\big)
-$$
+> import GHC.TypeLits
+> import Numeric.LinearAlgebra.Static
 
-We thus have that
+> import Data.Maybe ( fromJust )
 
-$$
-\begin{aligned}
-\condprob{p}{\boldsymbol{x}_i, \boldsymbol{x}_{i-1}}{\boldsymbol{y}_1,\ldots,\boldsymbol{y}_{i-1}} &=
-\condprob{p}{\boldsymbol{x}_i}{\boldsymbol{x}_{i-1}}
-\condprob{p}{\boldsymbol{x}_{i-1}}{\boldsymbol{y}_1,\ldots,\boldsymbol{y}_{i-1}} \\
-&=
-{\cal{N}}\big(\boldsymbol{x}_i; \boldsymbol{A}_{i-1}\boldsymbol{x}_{i-1}, \boldsymbol{\Sigma}^{(\boldsymbol{x})}_{i-1}\big){\cal{N}}\big(\boldsymbol{x}_{i-1}; \hat{\boldsymbol{x}}_{i-1}, \hat{\boldsymbol{\Sigma}}_{i-1}\big)
-\end{aligned}
-$$
+> import Data.Random.Source.PureMT
+> import Data.Random hiding ( gamma )
+> import Data.Random.Distribution.Multinomial
+> import Control.Monad.State
+> import qualified Control.Monad.Writer as W
 
+> muPrior :: R 2
+> muPrior = vector [0.0, 0.0]
+
+> sigmaPrior :: Sq 2
+> sigmaPrior = matrix [ 1000.0,    0.0
+>                     ,    0.0, 1000.0
+>                     ]
+
+> deltaT :: Double
+> deltaT = 0.1
+
+> bigA :: Sq 2
+> bigA = matrix [ 1, deltaT
+>               , 0,      1
+>               ]
+
+> a :: Double
+> a = 2.0
+
+> bigH :: L 1 2
+> bigH = matrix [ a, 0
+>               ]
+
+> bigSigmaY :: Sq 1
+> bigSigmaY = matrix [ 0.1 ]
+
+> bigSigmaX :: Sq 2
+> bigSigmaX = matrix [ 0.1, 0.0
+>                    , 0.0, 0.1
+>                    ]
+
+> inv :: KnownNat n => Sq n -> Maybe (Sq n)
+> inv m = linSolve m eye
+
+> outer ::  forall m n . (KnownNat m, KnownNat n) =>
+>           R n -> Sq n -> L m n -> Sq m -> Sq n -> Sq n -> [R m] -> [(R n, Sq n)]
+> outer muPrior sigmaPrior bigH bigSigmaY bigA bigSigmaX ys = result
+>   where
+>     result = scanl update (muPrior, sigmaPrior) ys
+>
+>     update :: (R n, Sq n) -> R m -> (R n, Sq n)
+>     update (xHatFlat, bigSigmaHatFlat) y = (xHatFlatNew, bigSigmaHatFlatNew)
+>       where
+>         v = y - bigH #> xHatFlat
+>         bigS = bigH <> bigSigmaHatFlat <> (tr bigH) + bigSigmaY
+>         bigK = bigSigmaHatFlat <> (tr bigH) <> (fromJust (inv bigS))
+>         xHat = xHatFlat + bigK #> v
+>         bigSigmaHat = bigSigmaHatFlat - bigK <> bigS <> (tr bigK)
+>         xHatFlatNew = bigA #> xHat
+>         bigSigmaHatFlatNew = bigA <> bigSigmaHat <> (tr bigA) + bigSigmaX
+
+
+> createObs :: RVar Double
+> createObs = do
+>   x <- rvarT (Normal 0.0 0.1)
+>   return x
+
+> foo seed nSamples =
+>   evalState (replicateM nSamples (sample (Normal 0.0 0.1)))
+>   (pureMT $ fromIntegral seed)
 
 Bibliography
 ============
