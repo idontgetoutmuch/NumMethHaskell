@@ -228,9 +228,10 @@ velocity of 0 with large variances and no correlation.
 
 > import Data.Random.Source.PureMT
 > import Data.Random hiding ( gamma )
-> import Data.Random.Distribution.Multinomial
 > import Control.Monad.State
 > import qualified Control.Monad.Writer as W
+> import Control.Monad.Loops
+
 
 > muPrior :: R 2
 > muPrior = vector [0.0, 0.0]
@@ -266,32 +267,47 @@ velocity of 0 with large variances and no correlation.
 > inv :: KnownNat n => Sq n -> Maybe (Sq n)
 > inv m = linSolve m eye
 
-> outer ::  forall m n . (KnownNat m, KnownNat n) =>
+> outer ::  {- forall m n . -} (KnownNat m, KnownNat n) =>
 >           R n -> Sq n -> L m n -> Sq m -> Sq n -> Sq n -> [R m] -> [(R n, Sq n)]
 > outer muPrior sigmaPrior bigH bigSigmaY bigA bigSigmaX ys = result
 >   where
 >     result = scanl update (muPrior, sigmaPrior) ys
 >
->     update :: (R n, Sq n) -> R m -> (R n, Sq n)
->     update (xHatFlat, bigSigmaHatFlat) y = (xHatFlatNew, bigSigmaHatFlatNew)
+>     -- update :: (R n, Sq n) -> R m -> (R n, Sq n)
+>     update (xHatFlat, bigSigmaHatFlat) y = error (show bigK) -- (xHatFlatNew, bigSigmaHatFlatNew)
 >       where
+>         -- v :: R m
 >         v = y - bigH #> xHatFlat
+>         -- bigS :: Sq m
 >         bigS = bigH <> bigSigmaHatFlat <> (tr bigH) + bigSigmaY
+>         -- bigK :: Sq n   -- Sq n <> L n m <> Sq m
 >         bigK = bigSigmaHatFlat <> (tr bigH) <> (fromJust (inv bigS))
->         xHat = xHatFlat + bigK #> v
->         bigSigmaHat = bigSigmaHatFlat - bigK <> bigS <> (tr bigK)
->         xHatFlatNew = bigA #> xHat
->         bigSigmaHatFlatNew = bigA <> bigSigmaHat <> (tr bigA) + bigSigmaX
+>         -- xHat = xHatFlat + bigK #> v
+>         -- bigSigmaHat = bigSigmaHatFlat - bigK <> bigS <> (tr bigK)
+>         -- xHatFlatNew = bigA #> xHat
+>         -- bigSigmaHatFlatNew = bigA <> bigSigmaHat <> (tr bigA) + bigSigmaX
 
 
-> createObs :: RVar Double
-> createObs = do
->   x <- rvarT (Normal 0.0 0.1)
->   return x
+> singleSample ::(Double, Double) -> RVarT (W.Writer [Double]) (Double, Double)
+> singleSample (xPrev, vPrev) = do
+>   psiX <- rvarT (Normal 0.0 0.1)
+>   let xNew = xPrev + deltaT * vPrev + psiX
+>   psiV <- rvarT (Normal 0.0 0.1)
+>   let vNew = vPrev + psiV
+>   upsilon <- rvarT (Normal 0.0 0.1)
+>   let y = a * xNew + upsilon
+>   lift $ W.tell [y]
+>   return (xNew, vNew)
 
-> foo seed nSamples =
->   evalState (replicateM nSamples (sample (Normal 0.0 0.1)))
->   (pureMT $ fromIntegral seed)
+> streamSample :: RVarT (W.Writer [Double]) (Double, Double)
+> streamSample = iterateM_ singleSample (0.0, 1.0)
+
+> samples :: ((Double, Double), [Double])
+> samples = W.runWriter (evalStateT (sample streamSample) (pureMT 2))
+
+> test :: [(R 2, Sq 2)]
+> test = outer muPrior sigmaPrior bigH bigSigmaY bigA bigSigmaX
+>        (map (\x -> vector [x]) (take 10 $ snd samples))
 
 Bibliography
 ============
