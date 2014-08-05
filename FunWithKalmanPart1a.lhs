@@ -9,12 +9,20 @@ bibliography: Kalman.bib
 \newcommand{\condprob} [3] {#1 \left( #2 \,\vert\, #3 \right)}
 \newcommand{\normal} [2] {{\cal{N}}\big( #1 , #2\big)}
 
+Introduction
+============
+
 Suppose we have particle moving in 1 dimension, where the initial
 velocity is sampled from a distribution. We can observe the position
 of the particle at fixed intervals and we wish to estimate its initial
 velocity. For generality, let us assume that the positions and the
 velocities can be perturbed at each interval and that our measurements
 are noisy.
+
+The Mathematical Model
+======================
+
+We take the position as $x_i$ and the velocity $v_i$:
 
 $$
 \begin{aligned}
@@ -48,7 +56,7 @@ $$
 ,\quad
 \boldsymbol{H}_i =
   \begin{bmatrix}
-    a_i \\
+    a_i & 0 \\
   \end{bmatrix}
 ,\quad
 \boldsymbol{\psi}_i \sim {\cal{N}}\big(0,\boldsymbol{\Sigma}^{(x)}_i\big)
@@ -207,8 +215,15 @@ Further information can be found in [@Boyd:EE363:Online], [@kleeman1996understan
 A Haskell Implementation
 ========================
 
-Let us start with a prior normal distribution with a mean position and
-velocity of 0 with large variances and no correlation.
+The [hmatrix](hackage.haskell.org/package/hmatrix) now uses the
+[DataKind](https://www.haskell.org/ghc/docs/latest/html/users_guide/promotion.html)
+extension in ghc to enforce compatibility of matrix and vector
+operations at the type level. See
+[here](http://dis.um.es/~alberto/hmatrix/static.html) for more
+details. Sadly a bug in the hmatrix implementation means we can't
+currently use this excellent feature and we content ourselves with
+comments describing what the types would be were it possible to use
+the DataKind extension.
 
 > {-# OPTIONS_GHC -Wall                     #-}
 > {-# OPTIONS_GHC -fno-warn-name-shadowing  #-}
@@ -221,10 +236,9 @@ velocity of 0 with large variances and no correlation.
 > {-# LANGUAGE ScopedTypeVariables          #-}
 > {-# LANGUAGE RankNTypes                   #-}
 
-> import GHC.TypeLits
-> import Numeric.LinearAlgebra.Static
+> module FunWithKalmanPart1a where
 
-> import Data.Maybe ( fromJust )
+> import Numeric.LinearAlgebra.HMatrix hiding ( outer )
 
 > import Data.Random.Source.PureMT
 > import Data.Random hiding ( gamma )
@@ -232,82 +246,133 @@ velocity of 0 with large variances and no correlation.
 > import qualified Control.Monad.Writer as W
 > import Control.Monad.Loops
 
+Let us make our model almost deterministic but with noisy observations.
 
-> muPrior :: R 2
+> stateVariance :: Double
+> stateVariance = 1e-6
+
+> obsVariance :: Double
+> obsVariance = 1.0
+
+And let us start with a prior normal distribution with a mean position
+and velocity of 0 with moderate variances and no correlation.
+
+> muPrior :: Vector Double
 > muPrior = vector [0.0, 0.0]
 
-> sigmaPrior :: Sq 2
-> sigmaPrior = matrix [ 1000.0,    0.0
->                     ,    0.0, 1000.0
->                     ]
+> sigmaPrior :: Matrix Double
+> sigmaPrior = (2 >< 2) [ 1e1,   0.0
+>                       , 0.0,   1e1
+>                       ]
+
+We now set up the parameters for our model as outlined in the
+preceeding section.
 
 > deltaT :: Double
-> deltaT = 0.1
+> deltaT = 0.001
 
-> bigA :: Sq 2
-> bigA = matrix [ 1, deltaT
->               , 0,      1
->               ]
+> bigA :: Matrix Double
+> bigA = (2 >< 2) [ 1, deltaT
+>                 , 0,      1
+>                 ]
 
 > a :: Double
-> a = 2.0
+> a = 1.0
 
-> bigH :: L 1 2
-> bigH = matrix [ a, 0
->               ]
+> bigH :: Matrix Double
+> bigH = (1 >< 2) [ a, 0
+>                 ]
 
-> bigSigmaY :: Sq 1
-> bigSigmaY = matrix [ 0.1 ]
+> bigSigmaY :: Matrix Double
+> bigSigmaY = (1 >< 1) [ obsVariance ]
 
-> bigSigmaX :: Sq 2
-> bigSigmaX = matrix [ 0.1, 0.0
->                    , 0.0, 0.1
->                    ]
+> bigSigmaX :: Matrix Double
+> bigSigmaX = (2 >< 2) [ stateVariance, 0.0
+>                      , 0.0,           stateVariance
+>                      ]
 
-> inv :: KnownNat n => Sq n -> Maybe (Sq n)
-> inv m = linSolve m eye
+The implementation of the Kalman filter using the hmatrix package is straightforward.
 
-> outer ::  {- forall m n . -} (KnownNat m, KnownNat n) =>
->           R n -> Sq n -> L m n -> Sq m -> Sq n -> Sq n -> [R m] -> [(R n, Sq n)]
+> -- outer ::  forall m n . (KnownNat m, KnownNat n) =>
+> --           R n -> Sq n -> L m n -> Sq m -> Sq n -> Sq n -> [R m] -> [(R n, Sq n)]
+> outer :: Vector Double
+>          -> Matrix Double
+>          -> Matrix Double
+>          -> Matrix Double
+>          -> Matrix Double
+>          -> Matrix Double
+>          -> [Vector Double]
+>          -> [(Vector Double, Matrix Double)]
 > outer muPrior sigmaPrior bigH bigSigmaY bigA bigSigmaX ys = result
 >   where
 >     result = scanl update (muPrior, sigmaPrior) ys
 >
 >     -- update :: (R n, Sq n) -> R m -> (R n, Sq n)
->     update (xHatFlat, bigSigmaHatFlat) y = error (show bigK) -- (xHatFlatNew, bigSigmaHatFlatNew)
+>     update (xHatFlat, bigSigmaHatFlat) y =
+>       (xHatFlatNew, bigSigmaHatFlatNew)
 >       where
 >         -- v :: R m
 >         v = y - bigH #> xHatFlat
 >         -- bigS :: Sq m
 >         bigS = bigH <> bigSigmaHatFlat <> (tr bigH) + bigSigmaY
->         -- bigK :: Sq n   -- Sq n <> L n m <> Sq m
->         bigK = bigSigmaHatFlat <> (tr bigH) <> (fromJust (inv bigS))
->         -- xHat = xHatFlat + bigK #> v
->         -- bigSigmaHat = bigSigmaHatFlat - bigK <> bigS <> (tr bigK)
->         -- xHatFlatNew = bigA #> xHat
->         -- bigSigmaHatFlatNew = bigA <> bigSigmaHat <> (tr bigA) + bigSigmaX
+>         -- bigK :: L n m
+>         bigK = bigSigmaHatFlat <> (tr bigH) <> (inv bigS)
+>         -- xHat :: R n
+>         xHat = xHatFlat + bigK #> v
+>         -- bigSigmaHat :: Sq n
+>         bigSigmaHat = bigSigmaHatFlat - bigK <> bigS <> (tr bigK)
+>         -- xHatFlatNew :: R n
+>         xHatFlatNew = bigA #> xHat
+>         -- bigSigmaHatFlatNew :: Sq n
+>         bigSigmaHatFlatNew = bigA <> bigSigmaHat <> (tr bigA) + bigSigmaX
 
+We create some ranodm data using our model parameters.
 
-> singleSample ::(Double, Double) -> RVarT (W.Writer [Double]) (Double, Double)
+> singleSample ::(Double, Double) ->
+>                RVarT (W.Writer [(Double, (Double, Double))]) (Double, Double)
 > singleSample (xPrev, vPrev) = do
->   psiX <- rvarT (Normal 0.0 0.1)
+>   psiX <- rvarT (Normal 0.0 stateVariance)
 >   let xNew = xPrev + deltaT * vPrev + psiX
->   psiV <- rvarT (Normal 0.0 0.1)
+>   psiV <- rvarT (Normal 0.0 stateVariance)
 >   let vNew = vPrev + psiV
->   upsilon <- rvarT (Normal 0.0 0.1)
+>   upsilon <- rvarT (Normal 0.0 obsVariance)
 >   let y = a * xNew + upsilon
->   lift $ W.tell [y]
+>   lift $ W.tell [(y, (xNew, vNew))]
 >   return (xNew, vNew)
 
-> streamSample :: RVarT (W.Writer [Double]) (Double, Double)
-> streamSample = iterateM_ singleSample (0.0, 1.0)
+> streamSample :: RVarT (W.Writer [(Double, (Double, Double))]) (Double, Double)
+> streamSample = iterateM_ singleSample (1.0, 1.0)
 
-> samples :: ((Double, Double), [Double])
+> samples :: ((Double, Double), [(Double, (Double, Double))])
 > samples = W.runWriter (evalStateT (sample streamSample) (pureMT 2))
 
-> test :: [(R 2, Sq 2)]
+Here are the actual values of the randomly generated positions.
+
+> actualXs :: [Double]
+> actualXs = map (fst . snd) $ take nObs $ snd samples
+
+> test :: [(Vector Double, Matrix Double)]
 > test = outer muPrior sigmaPrior bigH bigSigmaY bigA bigSigmaX
->        (map (\x -> vector [x]) (take 10 $ snd samples))
+>        (map (\x -> vector [x]) $ map fst $ snd samples)
+
+And using the Kalman filter we can estimate the positions
+
+> estXs :: [Double]
+> estXs = map (!!0) $ map toList $ map fst $ take nObs test
+
+> nObs :: Int
+> nObs = 1000
+
+And we can see that the estimates track the actuals quite nicely.
+
+```{.dia width='1000'}
+dia = image "diagrams/KalmanTimeEv.png" 1.0 1.0
+```
+
+Of course we really wanted to estimate the velocity.
+
+> estVs :: [Double]
+> estVs = map (!!1) $ map toList $ map fst $ take nObs test
 
 Bibliography
 ============
