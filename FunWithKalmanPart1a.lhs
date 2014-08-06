@@ -1,4 +1,4 @@
-% Fun with (Kalman) Filters Part I
+% Fun with (Kalman) Filters Part II
 % Dominic Steinitz
 % 21st July 2014
 
@@ -9,15 +9,26 @@ bibliography: Kalman.bib
 \newcommand{\condprob} [3] {#1 \left( #2 \,\vert\, #3 \right)}
 \newcommand{\normal} [2] {{\cal{N}}\big( #1 , #2\big)}
 
+```{.dia height='400'}
+dia = image "diagrams/KalmanTimeEvPref.png" 1.0 1.0
+```
 Introduction
 ============
 
-Suppose we have particle moving in 1 dimension, where the initial
-velocity is sampled from a distribution. We can observe the position
-of the particle at fixed intervals and we wish to estimate its initial
-velocity. For generality, let us assume that the positions and the
-velocities can be perturbed at each interval and that our measurements
-are noisy.
+Suppose we have particle moving in at constant velocity in 1
+dimension, where the velocity is sampled from a distribution. We can
+observe the position of the particle at fixed intervals and we wish to
+estimate its initial velocity. For generality, let us assume that the
+positions and the velocities can be perturbed at each interval and
+that our measurements are noisy.
+
+A point of Haskell interest: using type level literals caught a bug in
+the mathematical description (one of the dimensions of a matrix was
+incorrect). Of course, this would have become apparent at run-time but
+proof checking of this nature is surely the future for
+mathematicians. One could conceive of writing an implementation of an
+algorithm or proof, compiling it but never actually running it purely
+to check that some aspects of the algorithm or proof are correct.
 
 The Mathematical Model
 ======================
@@ -215,7 +226,8 @@ Further information can be found in [@Boyd:EE363:Online], [@kleeman1996understan
 A Haskell Implementation
 ========================
 
-The [hmatrix](hackage.haskell.org/package/hmatrix) now uses the
+The [hmatrix](hackage.haskell.org/package/hmatrix) now uses type level
+literals via the
 [DataKind](https://www.haskell.org/ghc/docs/latest/html/users_guide/promotion.html)
 extension in ghc to enforce compatibility of matrix and vector
 operations at the type level. See
@@ -223,7 +235,7 @@ operations at the type level. See
 details. Sadly a bug in the hmatrix implementation means we can't
 currently use this excellent feature and we content ourselves with
 comments describing what the types would be were it possible to use
-the DataKind extension.
+it.
 
 > {-# OPTIONS_GHC -Wall                     #-}
 > {-# OPTIONS_GHC -fno-warn-name-shadowing  #-}
@@ -257,9 +269,11 @@ Let us make our model almost deterministic but with noisy observations.
 And let us start with a prior normal distribution with a mean position
 and velocity of 0 with moderate variances and no correlation.
 
+> -- muPrior :: R 2
 > muPrior :: Vector Double
 > muPrior = vector [0.0, 0.0]
 
+> -- sigmaPrior :: Sq 2
 > sigmaPrior :: Matrix Double
 > sigmaPrior = (2 >< 2) [ 1e1,   0.0
 >                       , 0.0,   1e1
@@ -271,6 +285,7 @@ preceeding section.
 > deltaT :: Double
 > deltaT = 0.001
 
+> -- bigA :: Sq 2
 > bigA :: Matrix Double
 > bigA = (2 >< 2) [ 1, deltaT
 >                 , 0,      1
@@ -279,13 +294,16 @@ preceeding section.
 > a :: Double
 > a = 1.0
 
+> -- bigH :: L 1 2
 > bigH :: Matrix Double
 > bigH = (1 >< 2) [ a, 0
 >                 ]
 
+> -- bigSigmaY :: Sq 1
 > bigSigmaY :: Matrix Double
 > bigSigmaY = (1 >< 1) [ obsVariance ]
 
+> -- bigSigmaX :: Sq 2
 > bigSigmaX :: Matrix Double
 > bigSigmaX = (2 >< 2) [ stateVariance, 0.0
 >                      , 0.0,           stateVariance
@@ -363,7 +381,8 @@ And using the Kalman filter we can estimate the positions
 > nObs :: Int
 > nObs = 1000
 
-And we can see that the estimates track the actuals quite nicely.
+And we can see that the estimates track the actual positions quite
+nicely.
 
 ```{.dia width='1000'}
 dia = image "diagrams/KalmanTimeEv.png" 1.0 1.0
@@ -371,8 +390,16 @@ dia = image "diagrams/KalmanTimeEv.png" 1.0 1.0
 
 Of course we really wanted to estimate the velocity.
 
+> actualVs :: [Double]
+> actualVs = map (snd . snd) $ take nObs $ snd samples
+
 > estVs :: [Double]
 > estVs = map (!!1) $ map toList $ map fst $ take nObs test
+
+
+```{.dia width='1000'}
+dia = image "diagrams/KalmanTimeEvV.png" 1.0 1.0
+```
 
 Bibliography
 ============
