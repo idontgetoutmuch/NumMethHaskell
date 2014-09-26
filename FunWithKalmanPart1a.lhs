@@ -101,7 +101,7 @@ $$
 
 Since ${\boldsymbol{X}_i}\,\vert\,{\boldsymbol{Y}_{i-1}}$ and
 ${\boldsymbol{Y}_i}\,\vert\,{\boldsymbol{Y}_{i-1}}$ are jointly
-Gaussian and recalling that ${\hat{\boldsymbol{\Sigma}}^\flat_i}^\top =
+Gaussian and recalling that $({\hat{\boldsymbol{\Sigma}}^\flat_i})^\top =
 \hat{\boldsymbol{\Sigma}}^\flat_i$ as covariance matrices are
 symmetric, we can calculate their mean and covariance matrix as
 

@@ -8,6 +8,16 @@ bibliography: Kalman.bib
 
 \newcommand{\condprob} [3] {#1 \left( #2 \,\vert\, #3 \right)}
 
+```{.dia height='300'}
+import FunWithKalmanPart1
+import KalmanChart
+dia = diagEsts (zip (map fromIntegral [0..]) (map fst estimates))
+               (zip (map fromIntegral [0..]) uppers)
+               (zip (map fromIntegral [0..]) lowers)
+               (zip (map fromIntegral [0..]) (replicate nObs (fst obs)))
+
+```
+
 Suppose we wish to estimate the mean of a sample drawn from a normal
 distribution. In the Bayesian approach, we know the prior distribution
 for the mean (it could be a non-informative prior) and then we update
@@ -109,15 +119,24 @@ $$
 
 Hence $M$ is bounded in $L^2$ and therefore converges in $L^2$ and
 almost surely to $M_\infty \triangleq {\cal{E}}(X \,\vert\,
-{\cal{F}}_\infty)$. The noteworthy point is that if $M_\infy = X$ if
+{\cal{F}}_\infty)$. The noteworthy point is that if $M_\infty = X$ if
 and only if $\hat{\sigma}_i$ converges to 0. Explicitly we have
 
 $$
-\hat{\sigma}_i = \frac{1}{\sigma^} + \sum_{k=1}^i\frac{1}{c_k^2}
+\frac{1}{\hat{\sigma}_i^2} = \frac{1}{\sigma^2} + \sum_{k=1}^i\frac{1}{c_k^2}
 $$
 
 which explains why we took the observations to have varying and known
-variances.
+variances. You can read more in Williams' book [@williams].
+
+A Quick Check
+=============
+
+We have reformulated our estimation problem as a very simple version
+of the celebrated [Kalman
+filter](http://en.wikipedia.org/wiki/Kalman_filter). Of course, there
+are much more interesting applications of this but for now let us try
+"tracking" the sample from the random variable.
 
 > {-# OPTIONS_GHC -Wall                     #-}
 > {-# OPTIONS_GHC -fno-warn-name-shadowing  #-}
@@ -126,18 +145,30 @@ variances.
 > {-# OPTIONS_GHC -fno-warn-missing-methods #-}
 > {-# OPTIONS_GHC -fno-warn-orphans         #-}
 
+> module FunWithKalmanPart1 (
+>     obs
+>   , nObs
+>   , estimates
+>   , uppers
+>   , lowers
+>   ) where
+>
 > import Data.Random.Source.PureMT
 > import Data.Random
 > import Control.Monad.State
+
 
 > var, cSquared :: Double
 > var       = 1.0
 > cSquared  = 1.0
 >
+> nObs :: Int
+> nObs = 100
+
 > createObs :: RVar (Double, [Double])
 > createObs = do
 >   x <- rvar (Normal 0.0 var)
->   ys <- replicateM 100 $ rvar (Normal x cSquared)
+>   ys <- replicateM nObs $ rvar (Normal x cSquared)
 >   return (x, ys)
 >
 > obs :: (Double, [Double])
@@ -154,6 +185,22 @@ variances.
 >   where
 >     y  = head $ snd obs
 >     ys = tail $ snd obs
+>
+> uppers :: [Double]
+> uppers = map (\(x, y) -> x + 3 * (sqrt y)) estimates
+>
+> lowers :: [Double]
+> lowers = map (\(x, y) -> x - 3 * (sqrt y)) estimates
+
+```{.dia width='800'}
+import FunWithKalmanPart1
+import KalmanChart
+dia = diagEsts (zip (map fromIntegral [0..]) (map fst estimates))
+               (zip (map fromIntegral [0..]) uppers)
+               (zip (map fromIntegral [0..]) lowers)
+               (zip (map fromIntegral [0..]) (replicate nObs (fst obs)))
+
+```
 
 Bibliography
 ============
