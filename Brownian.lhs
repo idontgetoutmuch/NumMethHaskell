@@ -6,20 +6,17 @@
 bibliography: Kalman.bib
 ---
 
-In 1905, Einstein published five remarkable papers including:
+In 1905, Einstein published five remarkable papers including, "Über
+die von der molekularkinetischen Theorie der Wärme geforderte Bewegung
+von in ruhenden Flüssigkeiten suspendierten Teilchen." which roughly
+translates as "On the movement of small particles suspended in a
+stationary liquid demanded by the molecular-kinetic theory of heat."
+giving the first explanation of the phenomenon observed by Robert
+Brown in 1827 of small particles of pollen moving at random when
+suspended in water.
 
-Über die von der molekularkinetischen Theorie der Wärme geforderte
-Bewegung von in ruhenden Flüssigkeiten suspendierten Teilchen.
-
-which roughly translates as
-
-On the movement of small particles suspended in a stationary liquid
-demanded by the molecular-kinetic theory of heat.
-
-which explained why the phenomenon observed by
-
-Brownian motion is a stochastic process $\big(W_t\big)_{0 \le t \le 1}$ (presumably
-$W$ for Wiener) such that
+The eponymously named Brownian motion is a stochastic process
+$\big(W_t\big)_{0 \le t \le 1}$ (presumably $W$ for Wiener) such that
 
 * $W_0(\omega) = 0$ for all $\omega$
 
@@ -32,7 +29,9 @@ all $\omega$.
 The
 [Kolmogorov-Daniell](http://www.hss.caltech.edu/~kcb/Notes/Kolmogorov.pdf)
 theorem guarantees that a stochastic process satisfying the first two
-conditions exists but does not tell us that the paths are continuous. Further this theorem is not constructive relying on the axion of choice. Instead let us follow [@Ciesielski61].
+conditions exists but does not tell us that the paths are
+continuous. Further this theorem is not constructive relying on the
+axion of choice. Instead let us follow [@Ciesielski61].
 
 > {-# LANGUAGE DataKinds           #-}
 > {-# LANGUAGE TypeOperators       #-}
