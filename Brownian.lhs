@@ -62,6 +62,16 @@ We know such bases exist, for example, the [Fourier
 expansion](http://en.wikipedia.org/wiki/Fourier_series) and [Legendre
 polynomials](http://en.wikipedia.org/wiki/Legendre_polynomials).
 
+We defined the so-called Haar wavelets for $n = 0, 1, \ldots$ and $k = 1, 3, 5, \ldots, 2^n - 1$.
+
+$$
+H_{n,k}(t) = +2^{(n-1)/2)} (k - 1)2^{-n} < t \le k2^{-n}
+           = -2^{(n-1)/2)} k2^{-n}       < t \le (k + 1)2^{-n}
+$$
+
+Using Haskell's capabilities for dependently typed programming we can
+express these as shown below.
+
 > {-# OPTIONS_GHC -Wall                     #-}
 > {-# OPTIONS_GHC -fno-warn-name-shadowing  #-}
 > {-# OPTIONS_GHC -fno-warn-type-defaults   #-}
@@ -97,6 +107,20 @@ polynomials](http://en.wikipedia.org/wiki/Legendre_polynomials).
 >         n' = fromIntegral (natVal (Proxy :: Proxy n))
 >         k' = 2 * (fromIntegral (natVal (Proxy :: Proxy k))) - 1
 
+Now for example we can evaluate
+
+> haar11 :: Double -> Double
+> haar11 = unHaar (haar :: Haar 1 1)
+
+    [ghci]
+    haar11 0.75
+
+but we if we try to evaluate *haar :: Haar 1 2* we get a type error.
+
+Rather than go too far into dependently typed programming which would
+distract us from the existence proof, let us re-express this function
+in a more traditional way (which will only give us errors at runtime).
+
 > haarEtouffee :: Int -> Int -> Double -> Double
 > haarEtouffee n k t
 >   | n <= 0               = error "n must be >= 1"
@@ -109,6 +133,33 @@ polynomials](http://en.wikipedia.org/wiki/Legendre_polynomials).
 >     k' = fromIntegral k
 >     n' = fromIntegral n
 
+Here are the first few Haar wavelets.
+
+```{.dia height='300'}
+import Brownian
+import BrownianChart
+
+dia = diag 2 "n = 1, k = 1" "Bar" (xss!!0)
+````
+
+```{.dia height='300'}
+import Brownian
+import BrownianChart
+
+dia = (diag 2 "n = 2, k = 1" "Bar" (xss!!1) |||
+       diag 2 "n = 2, k = 3" "Urk" (xss!!2))
+````
+
+```{.dia height='300'}
+import Brownian
+import BrownianChart
+
+dia = ((diag 2 "n = 3, k = 1" "Bar" (xss!!3) |||
+        diag 2 "n = 3, k = 3" "Urk" (xss!!4) |||
+        diag 2 "n = 3, k = 5" "Urk" (xss!!5) |||
+        diag 2 "n = 3, k = 7" "Urk" (xss!!6)))
+````
+
 > schauderEtouffee :: Int -> Int -> Double -> Double
 > schauderEtouffee n k t = result (absolute 1e-6 (parSimpson (haarEtouffee n k) 0 t))
 
@@ -120,31 +171,6 @@ polynomials](http://en.wikipedia.org/wiki/Legendre_polynomials).
 
 > yss :: [[(Double, Double)]]
 > yss = map (\(m, k) -> map (\i -> let x = fromIntegral i / fromIntegral n in (x, schauderEtouffee m k x)) [0..n - 1]) [(1,1), (2,1), (2,3), (3,1), (3,3), (3,5), (3,7)]
-
-```{.dia height='300'}
-import Brownian
-import BrownianChart
-
-dia = diag 2 "Foo" "Bar" (xss!!0)
-````
-
-```{.dia height='300'}
-import Brownian
-import BrownianChart
-
-dia = (diag 2 "Foo" "Bar" (xss!!1) |||
-       diag 2 "Baz" "Urk" (xss!!2))
-````
-
-```{.dia height='300'}
-import Brownian
-import BrownianChart
-
-dia = ((diag 2 "Foo" "Bar" (xss!!3) |||
-        diag 2 "Baz" "Urk" (xss!!4) |||
-        diag 2 "Baz" "Urk" (xss!!5) |||
-        diag 2 "Baz" "Urk" (xss!!6)))
-````
 
 ```{.dia height='300'}
 import Brownian
