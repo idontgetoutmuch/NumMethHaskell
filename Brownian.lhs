@@ -160,7 +160,7 @@ dia = ((diag 2 "n = 3, k = 1" "Bar" (xss!!3) |||
         diag 2 "n = 3, k = 7" "Urk" (xss!!6)))
 ````
 
-> schauderEtouffee :: Int -> Int -> Double -> Double
+schauderEtouffee :: Int -> Int -> Double -> Double
 > schauderEtouffee n k t = result (absolute 1e-6 (parSimpson (haarEtouffee n k) 0 t))
 
 > n :: Int
