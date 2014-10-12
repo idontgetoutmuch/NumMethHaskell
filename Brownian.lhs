@@ -18,19 +18,52 @@ suspended in water.
 The eponymously named Brownian motion is a stochastic process
 $\big(W_t\big)_{0 \le t \le 1}$ (presumably $W$ for Wiener) such that
 
-* $W_0(\omega) = 0$ for all $\omega$
+1. $W_0(\omega) = 0$ for all $\omega$
 
-* For every $0 \le s \le t \le 1$, $W_t - W_s$ is independent of $\{
-W_u : u \le s\}$ and $\sim {\cal{N}}(0,t-s)$.
+2. For all $0 \le t_1 \le t \le t_2 \le, \ldots, t_n \le 1$, $W_{t_1},
+W_{t_2} - W_{t_3}, \ldots W_{t_{n-1}} - W_{t_n}$ are independent.
 
-* The map $t \mapsto W_t(\omega)$ is a continuous function of $t$ for
+3. $W_{t+h} - W_t \sim {\cal{N}}(0,h)$.
+
+4. The map $t \mapsto W_t(\omega)$ is a continuous function of $t$ for
 all $\omega$.
 
 The
 [Kolmogorov-Daniell](http://www.hss.caltech.edu/~kcb/Notes/Kolmogorov.pdf)
 theorem guarantees that a stochastic process satisfying the first two
 conditions exists but does not tell us that the paths are
-continuous. Further this theorem is not constructive relying on the
+continuous.
+
+For example, suppose that we have constructed Brownian motion as
+defined by the above conditions then take a random variable $U \sim
+{\cal{U}}[0,1]$. Define a new process
+
+$$
+ \tilde{W}_t =
+  \begin{cases}
+   W & \text{if } t \neq U \\
+   0 & \text{if } t = U
+  \end{cases}
+$$
+
+This has the same finite dimensional distributions as $W_t$ as
+$(W_{t_1}, W_{t_2}, W_{t_3}, \ldots W_{t_{n-1}}, W_{t_n})$ and
+$(\tilde{W}_{t_1}, \tilde{W}_{t_2}, \tilde{W}_{t_3}, \ldots
+\tilde{W}_{t_{n-1}}, \tilde{W}_{t_n})$ are equal unless $U \in \{t_1,
+\ldots, t_n\}$ and this set has measure 0. This process satisifes
+conditions 1--3 but is not continuous
+
+$$
+\lim_{t \uparrow U} \tilde{W}_t = \lim_{t \uparrow U} W_t = W_U
+$$
+
+and
+
+$$
+\mathbb{P}(W_U = 0) = \int_0^1
+$$
+
+Further this theorem is not constructive relying on the
 axion of choice. Instead let us follow [@Ciesielski61].
 
 It is tempting to think of Brownian motion as the limit in some sense
@@ -86,6 +119,7 @@ express these as shown below.
 > {-# LANGUAGE TypeOperators       #-}
 > {-# LANGUAGE Rank2Types          #-}
 > {-# LANGUAGE ScopedTypeVariables #-}
+> {-# LANGUAGE PolyKinds           #-}
 
 > module Brownian where
 
@@ -117,6 +151,10 @@ Now for example we can evaluate
 
 but we if we try to evaluate *haar :: Haar 1 2* we get a type error.
 
+> type family ZipWith (f :: a -> b -> c) (as :: [a]) (bs :: [b]) :: [c] where
+>   ZipWith f (a ': as) (b ': bs) = (f a b) ': (ZipWith f as bs)
+>   ZipWith f as        bs        = '[]
+
 Rather than go too far into dependently typed programming which would
 distract us from the existence proof, let us re-express this function
 in a more traditional way (which will only give us errors at runtime).
@@ -139,25 +177,25 @@ Here are the first few Haar wavelets.
 import Brownian
 import BrownianChart
 
-dia = diag 2 "n = 1, k = 1" "Bar" (xss!!0)
+dia = diag 2 "n = 1, k = 1" (xss!!0)
 ````
 
 ```{.dia height='300'}
 import Brownian
 import BrownianChart
 
-dia = (diag 2 "n = 2, k = 1" "Bar" (xss!!1) |||
-       diag 2 "n = 2, k = 3" "Urk" (xss!!2))
+dia = (diag 2 "n = 2, k = 1" (xss!!1) |||
+       diag 2 "n = 2, k = 3" (xss!!2))
 ````
 
 ```{.dia height='300'}
 import Brownian
 import BrownianChart
 
-dia = ((diag 2 "n = 3, k = 1" "Bar" (xss!!3) |||
-        diag 2 "n = 3, k = 3" "Urk" (xss!!4) |||
-        diag 2 "n = 3, k = 5" "Urk" (xss!!5) |||
-        diag 2 "n = 3, k = 7" "Urk" (xss!!6)))
+dia = ((diag 2 "n = 3, k = 1" (xss!!3) |||
+        diag 2 "n = 3, k = 3" (xss!!4) |||
+        diag 2 "n = 3, k = 5" (xss!!5) |||
+        diag 2 "n = 3, k = 7" (xss!!6)))
 ````
 
 > schauderEtouffee :: Int -> Int -> Double -> Double
@@ -176,25 +214,25 @@ dia = ((diag 2 "n = 3, k = 1" "Bar" (xss!!3) |||
 import Brownian
 import BrownianChart
 
-dia = diag 0.5 "Foo" "Bar" (yss!!0)
+dia = diag 0.5 "Foo" (yss!!0)
 ````
 
 ```{.dia height='300'}
 import Brownian
 import BrownianChart
 
-dia = (diag 0.5 "Foo" "Bar" (yss!!1) |||
-       diag 0.5 "Baz" "Urk" (yss!!2))
+dia = (diag 0.5 "Foo" (yss!!1) |||
+       diag 0.5 "Baz" (yss!!2))
 ````
 
 ```{.dia height='300'}
 import Brownian
 import BrownianChart
 
-dia = ((diag 0.5 "Foo" "Bar" (yss!!3) |||
-        diag 0.5 "Baz" "Urk" (yss!!4) |||
-        diag 0.5 "Baz" "Urk" (yss!!5) |||
-        diag 0.5 "Baz" "Urk" (yss!!6)))
+dia = ((diag 0.5 "Foo" (yss!!3) |||
+        diag 0.5 "Baz" (yss!!4) |||
+        diag 0.5 "Baz" (yss!!5) |||
+        diag 0.5 "Baz" (yss!!6)))
 ````
 
 Bibliography and Resources

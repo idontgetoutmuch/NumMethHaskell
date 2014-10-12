@@ -21,22 +21,21 @@ import System.IO.Unsafe
 denv :: DEnv
 denv = unsafePerformIO $ defaultEnv vectorAlignmentFns 500 500
 
-diag :: Double -> String -> String ->
+diag :: Double -> String ->
         [(Double, Double)] ->
         Diagram Cairo R2
-diag yHt t l1 ls =
-  fst $ runBackend denv (render (chart yHt t l1 ls) (500, 500))
+diag yHt t ls =
+  fst $ runBackend denv (render (chart yHt t ls) (500, 500))
 
-chart :: Double -> String -> String ->
+chart :: Double -> String ->
          [(Double, Double)] ->
          Renderable ()
-chart yHt t l1 lineVals = toRenderable layout
+chart yHt t lineVals = toRenderable layout
   where
 
     actuals = plot_lines_values .~ [lineVals]
               $ plot_lines_style  . line_color .~ opaque blue
               $ plot_lines_style  . line_width .~ 5.0
-              $ plot_lines_title .~ l1
               $ def
 
     layout = layout_title .~ t
