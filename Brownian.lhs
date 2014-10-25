@@ -63,8 +63,9 @@ $$
 \mathbb{P}(W_U = 0) = \int_0^1
 $$
 
-Further this theorem is not constructive relying on the
-axion of choice. Instead let us follow [@Ciesielski61].
+Further this theorem is not constructive relying on the axiom of
+choice. Most proofs of existence follow [@Ciesielski61]. Instead let
+us follow [@liggett2010continuous].
 
 It is tempting to think of Brownian motion as the limit in some sense
 of a random walk.
