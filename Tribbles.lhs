@@ -239,26 +239,13 @@ $$
 
 module Main where
 
--- import Data.Metrology
--- import Data.Units.SI
--- import Data.Units.SI.Prefixes
--- import Data.Metrology.Poly
-
-import qualified Prelude
+import qualified Prelude as P
 
 import Numeric.Units.Dimensional.Prelude hiding (Unit)
-import Numeric.Units.Dimensional.NonSI (mile)
 import Numeric.Units.Dimensional
-import Numeric.Units.Dimensional.UnitNames (UnitName, atom)
-
--- data EpoInternationUnit = EpoInternationUnit
-
--- instance Unit EpoInternationUnit where
---   type BaseUnit EpoInternationUnit = Gram
---   conversionRatio _ = error "Epo should never be converted from International Units"
 
 -- a_E :: Double -> Double
-a_E p = (13.8 Prelude.* p Prelude.+ 0.04) Prelude./ (0.08 Prelude.+ p)
+a_E p = (13.8 P.* p P.+ 0.04) P./ (0.08 P.+ p)
 
 mu_F, nu_F, gamma :: Double
 
@@ -266,7 +253,7 @@ mu_F = 5.9
 
 nu_F = 120.0
 
-muPerMl :: (Fractional a, Num a) => Unit NonMetric DConcentration a
+muPerMl :: (Fractional a, Num a) => Unit 'NonMetric DConcentration a
 muPerMl = (milli mole) / (milli litre)
 
 bigE_0 :: Concentration Double
@@ -279,19 +266,17 @@ gamma = 0.0083
 @Ackleh200621 gives $f$ and $g$ as
 
 \begin{code}
-fAckleh t m = a Prelude./ (1 Prelude.+ k Prelude.* (m Prelude.** r))
+fAckleh _t m = a P./ (1 P.+ k P.* (m P.** r))
   where
     a = 15600
     k = 0.0382
     r = 6.96
-
-gAckleh e = 1.0
 \end{code}
 
 @BELAIR1995317 gives $f$ as
 
 \begin{code}
-fBelair t m = a Prelude./ (1 + k Prelude.* (m Prelude.** r))
+fBelair _t m = a P./ (1 + k P.* (m P.** r))
   where
     a = 6570
     k = 0.0382
@@ -311,20 +296,34 @@ gThibodeaux e = d / n
 From@Ackleh200621 but note that @Thibodeaux2011 seem to have $T = 20$.
 
 \begin{code}
-deltaT, deltaMu, deltaNu :: Double
+deltaT, deltaMu, deltaNu :: Time Double
 
-deltaT = 0.05
-deltaMu = 0.01
-deltaNu = 0.05
+deltaT = 0.05 *~ day
+deltaMu = 0.01 *~ day
+deltaNu = 0.05 *~ day
 
-bigT :: Double
-bigT = 100.0
+bigT :: Time Double
+bigT = 100.0 *~ day
 
--- ts :: [Double]
-ts = [0.0,deltaT..bigT Prelude./ deltaT]
+muF, nuF :: Time Double
+muF = 5.9 *~ day
+nuF = 120.0 *~ day
+
+bigK :: Int
+bigK = floor (bigT / deltaT /~ one)
+
+n1 :: Int
+n1 = floor (muF / deltaT /~ one)
+
+n2 :: Int
+n2 = floor (nuF / deltaT /~ one)
+
+ts :: [Time Double]
+ts = take bigK $ 0.0 *~ day : (map (+ deltaT) ts)
 \end{code}
 
 \begin{code}
+g'0 :: Dimensionless Double
 g'0 = gThibodeaux bigE_0
 
 betaAckleh :: Time Double -> Frequency Double
@@ -333,15 +332,56 @@ betaAckleh mu
   | mu < (3 *~ day) = 2.773 *~ (one / day)
   | otherwise       = 0.000 *~ (one / day)
 
--- sigmaThibodeaux mu t e
---   | mu < 0    = error "negative mu"
---   | mu <= 3   = 2.773 - 0.5 / (1 + e)
---   | otherwise = - 0.5 / (1 + e)
+gAckleh :: Concentration Double -> Dimensionless Double
+gAckleh _e = 1.0 *~ one
 
--- d_1'0 :: Prelude.Int -> Prelude.Double
--- d_1'0 i = 1 Prelude.+ g'0 Prelude.* deltaT Prelude./ deltaMu Prelude.- deltaT Prelude.* undefined
+sigmaAckleh :: Time Double ->
+               Time Double ->
+               Concentration Double ->
+               Frequency Double
+sigmaAckleh mu _t e = betaAckleh mu * gAckleh e
 
--- bigAd_1'1 = gThibodeaux bigE_0 : []
+sigmaThibodeaux :: Time Double ->
+                   Time Double ->
+                   Concentration Double ->
+                   Frequency Double
+sigmaThibodeaux mu _t e
+  | mu < (0 *~ day) = error "sigmaThibodeaux: negative age"
+  | mu < (3 *~ day) = (2.773 *~ (one / day))
+                      - (0.5 *~ (muPerMl / day)) / ((1 *~ muPerMl) + e)
+  | otherwise       = (0.0 *~ (one /day))
+                      - (0.5 *~ (muPerMl / day)) / ((1 *~ muPerMl) + e)
+
+d_1'0 :: Int -> Dimensionless Double
+d_1'0 i = (1 *~ one) + (g'0 * deltaT / deltaMu)
+          - deltaT * sigmaThibodeaux ((fromIntegral i *~ one) * deltaMu) undefined bigE_0
+
+s_0 :: Time Double -> Quantity (DAmountOfSubstance / DConcentration) Double
+s_0 = const (4.45e7 *~ (mole / muPerMl))
+
+lowers :: [Dimensionless Double]
+lowers = replicate n1 (g'0 * deltaT / deltaMu)
+
+diags :: [Dimensionless Double]
+diags = g'0 : map d_1'0 [1..n1]
+
+uppers :: [Dimensionless Double]
+uppers = replicate n1 (0.0 *~ one)
+\end{code}
+
+As in @Thibodeaux2011 we give quantities in terms of cells per
+kilogram of body weight.
+
+\begin{code}
+p_0 :: Time Double -> Quantity (DAmountOfSubstance / DTime / DMass) Double
+p_0 mu = (1e11 *~ one) * pAux mu
+  where
+    pAux mu
+      | mu < (0 *~ day) = error "P_0: negative age"
+      | mu < (3 *~ day) = 8.55e-6 *~ (mole / day / kilo gram) *
+                          exp ((2.7519 *~ (one / day)) * mu)
+      | otherwise       = 8.55e-6 *~ (mole / day / kilo gram) *
+                          exp (8.319 *~ one - (0.0211 *~ (one /day)) * mu)
 \end{code}
 
 \begin{code}
