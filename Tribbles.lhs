@@ -229,165 +229,184 @@ p_{n_1}^k \\
 \end{bmatrix}
 $$
 
-\begin{code}
-{-# OPTIONS_GHC -Wall #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE NoImplicitPrelude #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeOperators #-}
+> {-# OPTIONS_GHC -Wall #-}
+> {-# LANGUAGE TypeFamilies #-}
+> {-# LANGUAGE NoImplicitPrelude #-}
+> {-# LANGUAGE FlexibleContexts #-}
+> {-# LANGUAGE DataKinds #-}
+> {-# LANGUAGE TypeOperators #-}
 
-module Main where
+> module Tribbles where
 
-import qualified Prelude as P
+> import qualified Prelude as P
 
-import Numeric.Units.Dimensional.Prelude hiding (Unit)
-import Numeric.Units.Dimensional
+> import Numeric.Units.Dimensional.Prelude hiding (Unit)
+> import Numeric.Units.Dimensional
 
--- a_E :: Double -> Double
-a_E p = (13.8 P.* p P.+ 0.04) P./ (0.08 P.+ p)
+> import Numeric.Integration.TanhSinh
+> import Numeric.LinearAlgebra
 
-mu_F, nu_F, gamma :: Double
+> -- a_E :: Double -> Double
+> a_E p = (13.8 P.* p P.+ 0.04) P./ (0.08 P.+ p)
 
-mu_F = 5.9
+> gamma :: Double
 
-nu_F = 120.0
+> muPerMl :: (Fractional a, Num a) => Unit 'NonMetric DConcentration a
+> muPerMl = (milli mole) / (milli litre)
 
-muPerMl :: (Fractional a, Num a) => Unit 'NonMetric DConcentration a
-muPerMl = (milli mole) / (milli litre)
+> bigE_0 :: Concentration Double
+> bigE_0 = 15.0 *~ muPerMl
 
-bigE_0 :: Concentration Double
-bigE_0 = 15.0 *~ muPerMl
-
-gamma = 0.0083
-
-\end{code}
+> gamma = 0.0083
 
 @Ackleh200621 gives $f$ and $g$ as
 
-\begin{code}
 fAckleh _t m = a P./ (1 P.+ k P.* (m P.** r))
   where
     a = 15600
     k = 0.0382
     r = 6.96
-\end{code}
 
 @BELAIR1995317 gives $f$ as
 
-\begin{code}
 fBelair _t m = a P./ (1 + k P.* (m P.** r))
   where
     a = 6570
     k = 0.0382
     r = 6.96
-\end{code}
 
 @Thibodeaux2011 give $g$ as
 
-\begin{code}
-gThibodeaux :: Concentration Double  -> Dimensionless Double
-gThibodeaux e = d / n
-  where
-    n = ((3.02 *~ one) * e + (0.31 *~ muPerMl))
-    d = (30.61 *~ muPerMl) + e
-\end{code}
+> gThibodeaux :: Concentration Double  -> Dimensionless Double
+> gThibodeaux e = d / n
+>   where
+>     n = ((3.02 *~ one) * e + (0.31 *~ muPerMl))
+>     d = (30.61 *~ muPerMl) + e
 
 From@Ackleh200621 but note that @Thibodeaux2011 seem to have $T = 20$.
 
-\begin{code}
-deltaT, deltaMu, deltaNu :: Time Double
+> deltaT, deltaMu, deltaNu :: Time Double
 
-deltaT = 0.05 *~ day
-deltaMu = 0.01 *~ day
-deltaNu = 0.05 *~ day
+> deltaT = 0.05 *~ day
+> deltaMu = 0.01 *~ day
+> deltaNu = 0.05 *~ day
 
-bigT :: Time Double
-bigT = 100.0 *~ day
+> bigT :: Time Double
+> bigT = 100.0 *~ day
 
-muF, nuF :: Time Double
-muF = 5.9 *~ day
-nuF = 120.0 *~ day
+> muF, nuF :: Time Double
+> muF = 5.9 *~ day
+> nuF = 120.0 *~ day
 
-bigK :: Int
-bigK = floor (bigT / deltaT /~ one)
+> bigK :: Int
+> bigK = floor (bigT / deltaT /~ one)
 
-n1 :: Int
-n1 = floor (muF / deltaT /~ one)
+> n1 :: Int
+> n1 = floor (muF / deltaMu /~ one)
 
-n2 :: Int
-n2 = floor (nuF / deltaT /~ one)
+> n2 :: Int
+> n2 = floor (nuF / deltaNu /~ one)
 
-ts :: [Time Double]
-ts = take bigK $ 0.0 *~ day : (map (+ deltaT) ts)
-\end{code}
+> ts :: [Time Double]
+> ts = take bigK $ 0.0 *~ day : (map (+ deltaT) ts)
 
-\begin{code}
-g'0 :: Dimensionless Double
-g'0 = gThibodeaux bigE_0
+> g'0 :: Dimensionless Double
+> g'0 = gThibodeaux bigE_0
 
-betaAckleh :: Time Double -> Frequency Double
-betaAckleh mu
-  | mu < (0 *~ day) = error "betaAckleh: negative age"
-  | mu < (3 *~ day) = 2.773 *~ (one / day)
-  | otherwise       = 0.000 *~ (one / day)
+> betaAckleh :: Time Double -> Frequency Double
+> betaAckleh mu
+>   | mu < (0 *~ day) = error "betaAckleh: negative age"
+>   | mu < (3 *~ day) = 2.773 *~ (one / day)
+>   | otherwise       = 0.000 *~ (one / day)
 
-gAckleh :: Concentration Double -> Dimensionless Double
-gAckleh _e = 1.0 *~ one
+> gAckleh :: Concentration Double -> Dimensionless Double
+> gAckleh _e = 1.0 *~ one
 
-sigmaAckleh :: Time Double ->
-               Time Double ->
-               Concentration Double ->
-               Frequency Double
-sigmaAckleh mu _t e = betaAckleh mu * gAckleh e
+> sigmaAckleh :: Time Double ->
+>                Time Double ->
+>                Concentration Double ->
+>                Frequency Double
+> sigmaAckleh mu _t e = betaAckleh mu * gAckleh e
 
-sigmaThibodeaux :: Time Double ->
-                   Time Double ->
-                   Concentration Double ->
-                   Frequency Double
-sigmaThibodeaux mu _t e
-  | mu < (0 *~ day) = error "sigmaThibodeaux: negative age"
-  | mu < (3 *~ day) = (2.773 *~ (one / day))
-                      - (0.5 *~ (muPerMl / day)) / ((1 *~ muPerMl) + e)
-  | otherwise       = (0.0 *~ (one /day))
-                      - (0.5 *~ (muPerMl / day)) / ((1 *~ muPerMl) + e)
+> sigmaThibodeaux :: Time Double ->
+>                    Time Double ->
+>                    Concentration Double ->
+>                    Frequency Double
+> sigmaThibodeaux mu _t e
+>   | mu < (0 *~ day) = error "sigmaThibodeaux: negative age"
+>   | mu < (3 *~ day) = (2.773 *~ (one / day))
+>                       - (0.5 *~ (muPerMl / day)) / ((1 *~ muPerMl) + e)
+>   | otherwise       = (0.0 *~ (one /day))
+>                       - (0.5 *~ (muPerMl / day)) / ((1 *~ muPerMl) + e)
 
-d_1'0 :: Int -> Dimensionless Double
-d_1'0 i = (1 *~ one) + (g'0 * deltaT / deltaMu)
-          - deltaT * sigmaThibodeaux ((fromIntegral i *~ one) * deltaMu) undefined bigE_0
+> d_1'0 :: Int -> Dimensionless Double
+> d_1'0 i = (1 *~ one) + (g'0 * deltaT / deltaMu)
+>           - deltaT * sigmaThibodeaux ((fromIntegral i *~ one) * deltaMu) undefined bigE_0
 
-s_0 :: Time Double -> Quantity (DAmountOfSubstance / DConcentration) Double
-s_0 = const (4.45e7 *~ (mole / muPerMl))
+> lowers :: [Dimensionless Double]
+> lowers = replicate n1 (negate $ g'0 * deltaT / deltaMu)
 
-lowers :: [Dimensionless Double]
-lowers = replicate n1 (g'0 * deltaT / deltaMu)
+> diags :: [Dimensionless Double]
+> diags = g'0 : map d_1'0 [1..n1]
 
-diags :: [Dimensionless Double]
-diags = g'0 : map d_1'0 [1..n1]
-
-uppers :: [Dimensionless Double]
-uppers = replicate n1 (0.0 *~ one)
-\end{code}
+> uppers :: [Dimensionless Double]
+> uppers = replicate n1 (0.0 *~ one)
 
 As in @Thibodeaux2011 we give quantities in terms of cells per
 kilogram of body weight.
 
-\begin{code}
-p_0 :: Time Double -> Quantity (DAmountOfSubstance / DTime / DMass) Double
-p_0 mu = (1e11 *~ one) * pAux mu
-  where
-    pAux mu
-      | mu < (0 *~ day) = error "P_0: negative age"
-      | mu < (3 *~ day) = 8.55e-6 *~ (mole / day / kilo gram) *
-                          exp ((2.7519 *~ (one / day)) * mu)
-      | otherwise       = 8.55e-6 *~ (mole / day / kilo gram) *
-                          exp (8.319 *~ one - (0.0211 *~ (one /day)) * mu)
-\end{code}
+> type CellDensity = Quantity (DAmountOfSubstance / DTime / DMass)
 
-\begin{code}
-main :: IO ()
-main = undefined
-\end{code}
+> p_0 :: Time Double -> CellDensity Double
+> p_0 mu = (1e11 *~ one) * pAux mu
+>   where
+>     pAux mu
+>       | mu < (0 *~ day) = error "P_0: negative age"
+>       | mu < (3 *~ day) = 8.55e-6 *~ (mole / day / kilo gram) *
+>                           exp ((2.7519 *~ (one / day)) * mu)
+>       | otherwise       = 8.55e-6 *~ (mole / day / kilo gram) *
+>                           exp (8.319 *~ one - (0.0211 *~ (one / day)) * mu)
+
+> m_0 :: Time Double -> CellDensity Double
+> m_0 nu = (1e11 *~ one) * mAux nu
+>   where
+>     mAux nu
+>       | nu < (0 *~ day) = error "m_0: age less than zero"
+>       | otherwise       = 0.039827  *~ (mole / day / kilo gram) *
+>                           exp (((-0.0083) *~ (one / day)) * nu)
+
+Let's check that these give plausible results.
+
+> m_0Untyped :: Double -> Double
+> m_0Untyped nu = m_0 (nu *~ day) /~ (mole / day / kilo gram)
+
+> p_0Untyped :: Double -> Double
+> p_0Untyped mu = p_0 (mu *~ day) /~ (mole / day / kilo gram)
+
+
+    [ghci]
+    import Numeric.Integration.TanhSinh
+    result $ relative 1e-6 $ parTrap m_0Untyped 0.001 (nuF /~ day)
+    result $ relative 1e-6 $ parTrap p_0Untyped 0.001 (muF /~ day)
+
+@Thibodeaux2011 does not give a definition for $\phi$ so we use the
+equivalent $s_0$ from @Ackleh200621 which references @Banks2003:
+"$\times 10^{11}$ erythrocytes/kg body weight $\times$ mL plasma/mU Epo/day"
+
+> s_0 :: Time Double ->
+>        Quantity (DAmountOfSubstance / DTime / DMass / DConcentration) Double
+> s_0 = const ((1e11 *~ one) * (4.45e-7 *~ (mole / day / kilo gram / muPerMl)))
+
+> b'0 :: [CellDensity Double]
+> b'0 = (s_0 (0.0 *~ day) * bigE_0) : (take n1 $ map p_0 (iterate (+ deltaMu) deltaMu))
+
+> foo = triDiagSolve (fromList (map (/~ one) lowers))
+>                    (fromList (map (/~ one) diags))
+>                    (fromList (map (/~ one) uppers))
+>                    (((n1 P.+1 )><1) (map (/~ (mole / day / kilo gram)) b'0))
+
+> main :: IO ()
+> main = undefined
 
 References
 ==========
