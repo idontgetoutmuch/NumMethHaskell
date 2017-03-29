@@ -243,37 +243,14 @@ $$
 > import Numeric.Units.Dimensional.Prelude hiding (Unit)
 > import Numeric.Units.Dimensional
 
-> import Numeric.Integration.TanhSinh
 > import Numeric.LinearAlgebra
-
-> -- a_E :: Double -> Double
-> a_E p = (13.8 P.* p P.+ 0.04) P./ (0.08 P.+ p)
-
-> gamma :: Double
+> import Numeric.Integration.TanhSinh
 
 > muPerMl :: (Fractional a, Num a) => Unit 'NonMetric DConcentration a
 > muPerMl = (milli mole) / (milli litre)
 
 > bigE_0 :: Concentration Double
 > bigE_0 = 15.0 *~ muPerMl
-
-> gamma = 0.0083
-
-@Ackleh200621 gives $f$ and $g$ as
-
-fAckleh _t m = a P./ (1 P.+ k P.* (m P.** r))
-  where
-    a = 15600
-    k = 0.0382
-    r = 6.96
-
-@BELAIR1995317 gives $f$ as
-
-fBelair _t m = a P./ (1 + k P.* (m P.** r))
-  where
-    a = 6570
-    k = 0.0382
-    r = 6.96
 
 @Thibodeaux2011 give $g$ as
 
@@ -358,7 +335,7 @@ kilogram of body weight.
 > type CellDensity = Quantity (DAmountOfSubstance / DTime / DMass)
 
 > p_0 :: Time Double -> CellDensity Double
-> p_0 mu = (1e11 *~ one) * pAux mu
+> p_0 mu' = (1e11 *~ one) * pAux mu'
 >   where
 >     pAux mu
 >       | mu < (0 *~ day) = error "P_0: negative age"
@@ -368,7 +345,7 @@ kilogram of body weight.
 >                           exp (8.319 *~ one - (0.0211 *~ (one / day)) * mu)
 
 > m_0 :: Time Double -> CellDensity Double
-> m_0 nu = (1e11 *~ one) * mAux nu
+> m_0 nu' = (1e11 *~ one) * mAux nu'
 >   where
 >     mAux nu
 >       | nu < (0 *~ day) = error "m_0: age less than zero"
@@ -400,10 +377,135 @@ equivalent $s_0$ from @Ackleh200621 which references @Banks2003:
 > b'0 :: [CellDensity Double]
 > b'0 = (s_0 (0.0 *~ day) * bigE_0) : (take n1 $ map p_0 (iterate (+ deltaMu) deltaMu))
 
-> foo = triDiagSolve (fromList (map (/~ one) lowers))
+> p'1 :: Matrix Double
+> p'1 = triDiagSolve (fromList (map (/~ one) lowers))
 >                    (fromList (map (/~ one) diags))
 >                    (fromList (map (/~ one) uppers))
->                    (((n1 P.+1 )><1) (map (/~ (mole / day / kilo gram)) b'0))
+>                    (((n1 P.+1 )><1) (map (/~ (mole / second / kilo gram)) b'0))
+
+Death rates of mature erythrocytes.
+
+> gammaThibodeaux :: Time Double ->
+>                    Time Double ->
+>                    Quantity (DAmountOfSubstance / DMass) Double ->
+>                    Frequency Double
+> gammaThibodeaux _nu _t _bigM = 0.0083 *~ (one / day)
+
+> gammaAckleh :: Time Double ->
+>                Time Double ->
+>                Quantity (DAmountOfSubstance / DMass) Double ->
+>                Frequency Double
+> gammaAckleh _nu _t bigM = (0.01 *~ (kilo gram / mole / day)) * bigM + 0.0001 *~ (one / day)
+
+For the intial mature erythrocyte population we can either use the
+integral of the initial distribution
+
+> bigM_0 :: Quantity (DAmountOfSubstance / DMass) Double
+> bigM_0 = r *~ (mole / kilo gram)
+>  where
+>    r = result $ relative 1e-6 $ parTrap m_0Untyped 0.001 (nuF /~ day)
+
+    [ghci]
+    bigM_0
+
+or we can use the sum of the values used in the finite difference approximation
+
+> bigM_0' :: Quantity (DAmountOfSubstance / DMass) Double
+> bigM_0' = (* deltaNu) $ sum $ map m_0 $ take n2 $ iterate (+ deltaNu) (0.0 *~ day)
+
+    [ghci]
+    bigM_0'
+
+> d_2'0 :: Int -> Dimensionless Double
+> d_2'0 i = (1 *~ one) + (g'0 * deltaT / deltaNu)
+>           - deltaT * gammaThibodeaux ((fromIntegral i *~ one) * deltaNu) undefined bigM_0
+
+> lowers2 :: [Dimensionless Double]
+> lowers2 = replicate n2 (negate $ deltaT / deltaNu)
+
+> diags2 :: [Dimensionless Double]
+> diags2 = (1.0 *~ one) : map d_2'0 [1..n2]
+
+> uppers2 :: [Dimensionless Double]
+> uppers2 = replicate n2 (0.0 *~ one)
+
+> b_2'0 :: [CellDensity Double]
+> b_2'0 = ((p'1 `atIndex` (n1,0)) *~ (mole / second / kilo gram)) :
+>         (take n2 $ map m_0 (iterate (+ deltaNu) deltaNu))
+
+> m'1 :: Matrix Double
+> m'1 = triDiagSolve (fromList (map (/~ one) lowers2))
+>                    (fromList (map (/~ one) diags2))
+>                    (fromList (map (/~ one) uppers2))
+>                    (((n2 P.+ 1)><1) (map (/~ (mole / second / kilo gram)) b_2'0))
+
+
+
+@Ackleh2013 and @Ackleh200621 give $f$
+
+> fAckleh :: Time Double ->
+>            Quantity (DAmountOfSubstance / DMass) Double ->
+>            Quantity (DConcentration / DTime) Double
+> fAckleh _t bigM = a / ((1.0 *~ one) + k * (bigM' ** r))
+>   where
+>     a = 15600 *~ (muPerMl / day)
+>     k = 0.0382 *~ one
+>     r = 6.96 *~ one
+>     bigM' = ((bigM /~ (mole / kilo gram)) *~ one)
+
+The much older @BELAIR1995317 gives $f$ as
+
+fBelair _t m = a P./ (1 + k P.* (m P.** r))
+  where
+    a = 6570
+    k = 0.0382
+    r = 6.96
+
+For the intial precursor population we can either use the
+integral of the initial distribution
+
+    result $ relative 1e-6 $ parTrap p_0Untyped 0.001 (muF /~ day)
+
+
+> bigP_0 :: Quantity (DAmountOfSubstance / DMass) Double
+> bigP_0 = r *~ (mole / kilo gram)
+>  where
+>    r = result $ relative 1e-6 $ parTrap p_0Untyped 0.001 (muF /~ day)
+
+    [ghci]
+    bigP_0
+
+or we can use the sum of the values used in the finite difference approximation
+
+> bigP_0' :: Quantity (DAmountOfSubstance / DMass) Double
+> bigP_0' = (* deltaMu) $ sum $ map p_0 $ take n1 $ iterate (+ deltaMu) (0.0 *~ day)
+
+    [ghci]
+    bigP_0'
+
+
+@Thibodeaux2011 give the following for $a_E$
+
+> a_E :: Quantity (DAmountOfSubstance / DMass) Double -> Frequency Double
+> a_E bigP = ((n / d) /~ one) *~ (one / day)
+>   where
+>     n :: Dimensionless Double
+>     n = bigP * (13.8 *~ (kilo gram / mole)) + 0.04 *~ one
+>     d :: Dimensionless Double
+>     d = (bigP /~ (mole / kilo gram)) *~ one + 0.08 *~ one
+
+*but* from @Ackleh200621
+
+ > The only biological basis for the latter is that the decay rate of
+ > erythropoietin should be an increasing function of the precursor
+ > population and this function remains in the range 0.50–6.65
+ > $\mathrm{days}^{-1}$
+
+and, given this is at variance with their given function, it may be
+safer to use their alternative of
+
+> a_E' :: Quantity (DAmountOfSubstance / DMass) Double -> Frequency Double
+> a_E' _bigP = 6.65 *~ (one / day)
 
 > main :: IO ()
 > main = undefined
