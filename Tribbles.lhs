@@ -249,8 +249,8 @@ $$
 > muPerMl :: (Fractional a, Num a) => Unit 'NonMetric DConcentration a
 > muPerMl = (milli mole) / (milli litre)
 
-> bigE_0 :: Concentration Double
-> bigE_0 = 15.0 *~ muPerMl
+> bigE'0 :: Concentration Double
+> bigE'0 = 15.0 *~ muPerMl
 
 @Thibodeaux2011 give $g$ as
 
@@ -288,7 +288,7 @@ From@Ackleh200621 but note that @Thibodeaux2011 seem to have $T = 20$.
 > ts = take bigK $ 0.0 *~ day : (map (+ deltaT) ts)
 
 > g'0 :: Dimensionless Double
-> g'0 = gThibodeaux bigE_0
+> g'0 = gThibodeaux bigE'0
 
 > betaAckleh :: Time Double -> Frequency Double
 > betaAckleh mu
@@ -318,7 +318,7 @@ From@Ackleh200621 but note that @Thibodeaux2011 seem to have $T = 20$.
 
 > d_1'0 :: Int -> Dimensionless Double
 > d_1'0 i = (1 *~ one) + (g'0 * deltaT / deltaMu)
->           - deltaT * sigmaThibodeaux ((fromIntegral i *~ one) * deltaMu) undefined bigE_0
+>           - deltaT * sigmaThibodeaux ((fromIntegral i *~ one) * deltaMu) undefined bigE'0
 
 > lowers :: [Dimensionless Double]
 > lowers = replicate n1 (negate $ g'0 * deltaT / deltaMu)
@@ -334,11 +334,11 @@ kilogram of body weight.
 
 > type CellDensity = Quantity (DAmountOfSubstance / DTime / DMass)
 
-> p_0 :: Time Double -> CellDensity Double
-> p_0 mu' = (1e11 *~ one) * pAux mu'
+> p'0 :: Time Double -> CellDensity Double
+> p'0 mu' = (1e11 *~ one) * pAux mu'
 >   where
 >     pAux mu
->       | mu < (0 *~ day) = error "P_0: negative age"
+>       | mu < (0 *~ day) = error "p'0: negative age"
 >       | mu < (3 *~ day) = 8.55e-6 *~ (mole / day / kilo gram) *
 >                           exp ((2.7519 *~ (one / day)) * mu)
 >       | otherwise       = 8.55e-6 *~ (mole / day / kilo gram) *
@@ -357,14 +357,14 @@ Let's check that these give plausible results.
 > m_0Untyped :: Double -> Double
 > m_0Untyped nu = m_0 (nu *~ day) /~ (mole / day / kilo gram)
 
-> p_0Untyped :: Double -> Double
-> p_0Untyped mu = p_0 (mu *~ day) /~ (mole / day / kilo gram)
+> p'0Untyped :: Double -> Double
+> p'0Untyped mu = p'0 (mu *~ day) /~ (mole / day / kilo gram)
 
 
     [ghci]
     import Numeric.Integration.TanhSinh
     result $ relative 1e-6 $ parTrap m_0Untyped 0.001 (nuF /~ day)
-    result $ relative 1e-6 $ parTrap p_0Untyped 0.001 (muF /~ day)
+    result $ relative 1e-6 $ parTrap p'0Untyped 0.001 (muF /~ day)
 
 @Thibodeaux2011 does not give a definition for $\phi$ so we use the
 equivalent $s_0$ from @Ackleh200621 which references @Banks2003:
@@ -375,7 +375,7 @@ equivalent $s_0$ from @Ackleh200621 which references @Banks2003:
 > s_0 = const ((1e11 *~ one) * (4.45e-7 *~ (mole / day / kilo gram / muPerMl)))
 
 > b'0 :: [CellDensity Double]
-> b'0 = (s_0 (0.0 *~ day) * bigE_0) : (take n1 $ map p_0 (iterate (+ deltaMu) deltaMu))
+> b'0 = (s_0 (0.0 *~ day) * bigE'0) : (take n1 $ map p'0 (iterate (+ deltaMu) deltaMu))
 
 > p'1 :: Matrix Double
 > p'1 = triDiagSolve (fromList (map (/~ one) lowers))
@@ -400,25 +400,25 @@ Death rates of mature erythrocytes.
 For the intial mature erythrocyte population we can either use the
 integral of the initial distribution
 
-> bigM_0 :: Quantity (DAmountOfSubstance / DMass) Double
-> bigM_0 = r *~ (mole / kilo gram)
+> bigM'0 :: Quantity (DAmountOfSubstance / DMass) Double
+> bigM'0 = r *~ (mole / kilo gram)
 >  where
 >    r = result $ relative 1e-6 $ parTrap m_0Untyped 0.001 (nuF /~ day)
 
     [ghci]
-    bigM_0
+    bigM'0
 
 or we can use the sum of the values used in the finite difference approximation
 
-> bigM_0' :: Quantity (DAmountOfSubstance / DMass) Double
-> bigM_0' = (* deltaNu) $ sum $ map m_0 $ take n2 $ iterate (+ deltaNu) (0.0 *~ day)
+> bigM'0' :: Quantity (DAmountOfSubstance / DMass) Double
+> bigM'0' = (* deltaNu) $ sum $ map m_0 $ take n2 $ iterate (+ deltaNu) (0.0 *~ day)
 
     [ghci]
-    bigM_0'
+    bigM'0'
 
 > d_2'0 :: Int -> Dimensionless Double
 > d_2'0 i = (1 *~ one) + (g'0 * deltaT / deltaNu)
->           - deltaT * gammaThibodeaux ((fromIntegral i *~ one) * deltaNu) undefined bigM_0
+>           - deltaT * gammaThibodeaux ((fromIntegral i *~ one) * deltaNu) undefined bigM'0
 
 > lowers2 :: [Dimensionless Double]
 > lowers2 = replicate n2 (negate $ deltaT / deltaNu)
@@ -430,7 +430,7 @@ or we can use the sum of the values used in the finite difference approximation
 > uppers2 = replicate n2 (0.0 *~ one)
 
 > b_2'0 :: [CellDensity Double]
-> b_2'0 = ((p'1 `atIndex` (n1,0)) *~ (mole / second / kilo gram)) :
+> b_2'0 = (g'0 * ((p'1 `atIndex` (n1,0)) *~ (mole / second / kilo gram))) :
 >         (take n2 $ map m_0 (iterate (+ deltaNu) deltaNu))
 
 > m'1 :: Matrix Double
@@ -438,8 +438,6 @@ or we can use the sum of the values used in the finite difference approximation
 >                    (fromList (map (/~ one) diags2))
 >                    (fromList (map (/~ one) uppers2))
 >                    (((n2 P.+ 1)><1) (map (/~ (mole / second / kilo gram)) b_2'0))
-
-
 
 @Ackleh2013 and @Ackleh200621 give $f$
 
@@ -464,24 +462,24 @@ fBelair _t m = a P./ (1 + k P.* (m P.** r))
 For the intial precursor population we can either use the
 integral of the initial distribution
 
-    result $ relative 1e-6 $ parTrap p_0Untyped 0.001 (muF /~ day)
+    result $ relative 1e-6 $ parTrap p'0Untyped 0.001 (muF /~ day)
 
 
-> bigP_0 :: Quantity (DAmountOfSubstance / DMass) Double
-> bigP_0 = r *~ (mole / kilo gram)
+> bigP'0 :: Quantity (DAmountOfSubstance / DMass) Double
+> bigP'0 = r *~ (mole / kilo gram)
 >  where
->    r = result $ relative 1e-6 $ parTrap p_0Untyped 0.001 (muF /~ day)
+>    r = result $ relative 1e-6 $ parTrap p'0Untyped 0.001 (muF /~ day)
 
     [ghci]
-    bigP_0
+    bigP'0
 
 or we can use the sum of the values used in the finite difference approximation
 
-> bigP_0' :: Quantity (DAmountOfSubstance / DMass) Double
-> bigP_0' = (* deltaMu) $ sum $ map p_0 $ take n1 $ iterate (+ deltaMu) (0.0 *~ day)
+> bigP'0' :: Quantity (DAmountOfSubstance / DMass) Double
+> bigP'0' = (* deltaMu) $ sum $ map p'0 $ take n1 $ iterate (+ deltaMu) (0.0 *~ day)
 
     [ghci]
-    bigP_0'
+    bigP'0'
 
 
 @Thibodeaux2011 give the following for $a_E$
@@ -506,6 +504,56 @@ safer to use their alternative of
 
 > a_E' :: Quantity (DAmountOfSubstance / DMass) Double -> Frequency Double
 > a_E' _bigP = 6.65 *~ (one / day)
+
+> f'0 :: Quantity (DConcentration / DTime) Double
+> f'0 = fAckleh undefined bigM'0
+
+> bigE'1 :: Concentration Double
+> bigE'1 = (bigE'0 + deltaT * f'0) / (1.0 *~ one + deltaT * a_E' bigP'0)
+
+> d_1 :: Dimensionless Double ->
+>        Concentration Double ->
+>        Int ->
+>        Dimensionless Double
+> d_1 g e i = (1 *~ one) + (g * deltaT / deltaMu)
+>           - deltaT * sigmaThibodeaux ((fromIntegral i *~ one) * deltaMu) undefined e
+
+> d_2 :: Dimensionless Double ->
+>        Quantity (DAmountOfSubstance / DMass) Double ->
+>        Int ->
+>        Dimensionless Double
+> d_2 g bigM i = (1 *~ one) + (g * deltaT / deltaNu)
+>           - deltaT * gammaThibodeaux ((fromIntegral i *~ one) * deltaNu) undefined bigM
+
+> oneStep :: (Matrix Double, Matrix Double, Concentration Double) ->
+>            (Matrix Double, Matrix Double, Concentration Double)
+> oneStep (psPrev, msPrev, ePrev) = (psNew, msNew, eNew)
+>   where
+>     g  = gThibodeaux ePrev
+>     ls = replicate n1 (negate $ g * deltaT / deltaMu)
+>     ds = g : map (d_1 g ePrev)  [1..n1]
+>     us = replicate n1 (0.0 *~ one)
+>     psNew :: Matrix Double
+>     psNew = triDiagSolve (fromList (map (/~ one) ls))
+>                          (fromList (map (/~ one) ds))
+>                          (fromList (map (/~ one) us))
+>                          psPrev
+>     ls2 = replicate n2 (negate $ deltaT / deltaNu)
+>     bigM :: Quantity (DAmountOfSubstance / DMass) Double
+>     bigM = (* deltaNu) $ ((sumElements msPrev) *~ (mole / kilo gram / day))
+>     ds2 = (1.0 *~ one) : map (d_2 g bigM) [1..n2]
+>     us2 = replicate n2 (0.0 *~ one)
+>     msNew :: Matrix Double
+>     msNew = triDiagSolve (fromList (map (/~ one) ls2))
+>                          (fromList (map (/~ one) ds2))
+>                          (fromList (map (/~ one) us2))
+>                          msPrev
+>     bigP :: Quantity (DAmountOfSubstance / DMass) Double
+>     bigP = (* deltaMu) $ sumElements psPrev *~ (mole / kilo gram / day)
+>     f :: Quantity (DConcentration / DTime) Double
+>     f = fAckleh undefined bigM
+>     eNew :: Concentration Double
+>     eNew = (ePrev + deltaT * f) / (1.0 *~ one + deltaT * a_E' bigP)
 
 > main :: IO ()
 > main = undefined
