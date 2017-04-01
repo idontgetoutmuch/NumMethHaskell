@@ -246,6 +246,10 @@ $$
 > import Numeric.LinearAlgebra
 > import Numeric.Integration.TanhSinh
 
+> import Control.Monad.Writer
+> import Control.Monad.Loops
+
+
 > muPerMl :: (Fractional a, Num a) => Unit 'NonMetric DConcentration a
 > muPerMl = (milli mole) / (milli litre)
 
@@ -305,16 +309,22 @@ From@Ackleh200621 but note that @Thibodeaux2011 seem to have $T = 20$.
 >                Frequency Double
 > sigmaAckleh mu _t e = betaAckleh mu * gAckleh e
 
+> betaThibodeaux :: Time Double ->
+>                   Frequency Double
+> betaThibodeaux mu
+>   | mu < (0 *~ day) = error "betaThibodeaux: negative age"
+>   | mu < (3 *~ day) = (2.773 *~ (one / day))
+>   | otherwise       = (0.0 *~ (one /day))
+
+> alphaThibodeaux :: Concentration Double ->
+>                    Frequency Double
+> alphaThibodeaux e = (0.5 *~ (muPerMl / day)) / ((1 *~ muPerMl) + e)
+
 > sigmaThibodeaux :: Time Double ->
 >                    Time Double ->
 >                    Concentration Double ->
 >                    Frequency Double
-> sigmaThibodeaux mu _t e
->   | mu < (0 *~ day) = error "sigmaThibodeaux: negative age"
->   | mu < (3 *~ day) = (2.773 *~ (one / day))
->                       - (0.5 *~ (muPerMl / day)) / ((1 *~ muPerMl) + e)
->   | otherwise       = (0.0 *~ (one /day))
->                       - (0.5 *~ (muPerMl / day)) / ((1 *~ muPerMl) + e)
+> sigmaThibodeaux mu _t e = gThibodeaux e * (betaThibodeaux mu - alphaThibodeaux e)
 
 > d_1'0 :: Int -> Dimensionless Double
 > d_1'0 i = (1 *~ one) + (g'0 * deltaT / deltaMu)
@@ -418,7 +428,7 @@ or we can use the sum of the values used in the finite difference approximation
 
 > d_2'0 :: Int -> Dimensionless Double
 > d_2'0 i = (1 *~ one) + (g'0 * deltaT / deltaNu)
->           - deltaT * gammaThibodeaux ((fromIntegral i *~ one) * deltaNu) undefined bigM'0
+>           + deltaT * gammaThibodeaux ((fromIntegral i *~ one) * deltaNu) undefined bigM'0
 
 > lowers2 :: [Dimensionless Double]
 > lowers2 = replicate n2 (negate $ deltaT / deltaNu)
@@ -449,7 +459,7 @@ or we can use the sum of the values used in the finite difference approximation
 >     a = 15600 *~ (muPerMl / day)
 >     k = 0.0382 *~ one
 >     r = 6.96 *~ one
->     bigM' = ((bigM /~ (mole / kilo gram)) *~ one)
+>     bigM' = ((bigM /~ (mole / kilo gram)) *~ one) * (1e-11 *~ one)
 
 The much older @BELAIR1995317 gives $f$ as
 
@@ -463,7 +473,6 @@ For the intial precursor population we can either use the
 integral of the initial distribution
 
     result $ relative 1e-6 $ parTrap p'0Untyped 0.001 (muF /~ day)
-
 
 > bigP'0 :: Quantity (DAmountOfSubstance / DMass) Double
 > bigP'0 = r *~ (mole / kilo gram)
@@ -480,7 +489,6 @@ or we can use the sum of the values used in the finite difference approximation
 
     [ghci]
     bigP'0'
-
 
 @Thibodeaux2011 give the following for $a_E$
 
@@ -518,45 +526,63 @@ safer to use their alternative of
 > d_1 g e i = (1 *~ one) + (g * deltaT / deltaMu)
 >           - deltaT * sigmaThibodeaux ((fromIntegral i *~ one) * deltaMu) undefined e
 
-> d_2 :: Dimensionless Double ->
->        Quantity (DAmountOfSubstance / DMass) Double ->
+> d_2 :: Quantity (DAmountOfSubstance / DMass) Double ->
 >        Int ->
 >        Dimensionless Double
-> d_2 g bigM i = (1 *~ one) + (g * deltaT / deltaNu)
->           - deltaT * gammaThibodeaux ((fromIntegral i *~ one) * deltaNu) undefined bigM
+> d_2 bigM i = (1 *~ one) + deltaT / deltaNu
+>            + deltaT * gammaThibodeaux ((fromIntegral i *~ one) * deltaNu) undefined bigM
 
-> oneStep :: (Matrix Double, Matrix Double, Concentration Double) ->
->            (Matrix Double, Matrix Double, Concentration Double)
-> oneStep (psPrev, msPrev, ePrev) = (psNew, msNew, eNew)
->   where
+> oneStepM :: (Matrix Double, Matrix Double, Concentration Double, Time Double) ->
+>             Writer [(Quantity (DAmountOfSubstance / DMass) Double,
+>                      Quantity (DAmountOfSubstance / DMass) Double,
+>                      Concentration Double)]
+>                    (Matrix Double, Matrix Double, Concentration Double, Time Double)
+> oneStepM (psPrev, msPrev, ePrev, tPrev) = do
+>   let
 >     g  = gThibodeaux ePrev
 >     ls = replicate n1 (negate $ g * deltaT / deltaMu)
 >     ds = g : map (d_1 g ePrev)  [1..n1]
 >     us = replicate n1 (0.0 *~ one)
+>     b1'0 = (s_0 tPrev * ePrev) /~ (mole / second / kilo gram)
+>     b1 = asColumn $ vjoin [scalar b1'0, subVector 1 n1 $ flatten psPrev]
 >     psNew :: Matrix Double
 >     psNew = triDiagSolve (fromList (map (/~ one) ls))
 >                          (fromList (map (/~ one) ds))
 >                          (fromList (map (/~ one) us))
->                          psPrev
+>                          b1
 >     ls2 = replicate n2 (negate $ deltaT / deltaNu)
 >     bigM :: Quantity (DAmountOfSubstance / DMass) Double
->     bigM = (* deltaNu) $ ((sumElements msPrev) *~ (mole / kilo gram / day))
->     ds2 = (1.0 *~ one) : map (d_2 g bigM) [1..n2]
+>     bigM = (* deltaNu) $ ((sumElements msPrev) *~ (mole / kilo gram / second))
+>     ds2 = (1.0 *~ one) : map (d_2 bigM) [1..n2]
 >     us2 = replicate n2 (0.0 *~ one)
+>     b2'0 = (g * (psNew `atIndex` (n1, 0) *~ (mole / second / kilo gram))) /~
+>            (mole / second / kilo gram)
+>     b2 = asColumn $ vjoin [scalar b2'0, subVector 1 n2 $ flatten msPrev]
 >     msNew :: Matrix Double
 >     msNew = triDiagSolve (fromList (map (/~ one) ls2))
 >                          (fromList (map (/~ one) ds2))
 >                          (fromList (map (/~ one) us2))
->                          msPrev
+>                          b2
 >     bigP :: Quantity (DAmountOfSubstance / DMass) Double
->     bigP = (* deltaMu) $ sumElements psPrev *~ (mole / kilo gram / day)
+>     bigP = (* deltaMu) $ sumElements psPrev *~ (mole / kilo gram / second)
 >     f :: Quantity (DConcentration / DTime) Double
 >     f = fAckleh undefined bigM
 >     eNew :: Concentration Double
 >     eNew = (ePrev + deltaT * f) / (1.0 *~ one + deltaT * a_E' bigP)
+>     tNew = tPrev + deltaT
+>   tell [(bigP, bigM, ePrev)]
+>   return (psNew, msNew, eNew, tNew)
 
-> main :: IO ()
-> main = undefined
+> ys :: [(Quantity (DAmountOfSubstance / DMass) Double,
+>         Quantity (DAmountOfSubstance / DMass) Double,
+>         Concentration Double)]
+> ys = take 2000 $
+>      snd $
+>      runWriter $
+>      iterateM_ oneStepM ((((n1 P.+1 )><1) (map (/~ (mole / second / kilo gram)) b'0)),
+>                          (((n2 P.+ 1)><1) $ (map (/~ (mole / second / kilo gram)) b_2'0)),
+>                          bigE'0,
+>                          (0.0 *~ day))
 
 References
 ==========
