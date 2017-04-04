@@ -9,6 +9,40 @@ bibliography: DynSys.bib
 Introduction
 ============
 
+[Tribbles](https://en.wikipedia.org/wiki/Tribble) originate from the
+planet Iota Geminorum IV and, according to Dr. McCoy, are born
+pregnant. No further details are given but we can follow
+@gurtin1974non and perhaps recover some of what happens on the
+Enterprise.
+
+Of course, age-dependent population models are of more than fictional
+use and can be applied, for example, to modelling the progression of
+Malaria in infected hosts. We roughly follow some of @Thibodeaux2011
+who themselves reference @BELAIR1995317.
+
+Of interest to Haskellers are:
+
+* The use of the [hmatrix](https://github.com/albertoruiz/hmatrix/)
+  package which now contains functions to solve tridiagonal systems
+  used in this post. You will need to use HEAD until a new hackage /
+  stackage release is made. My future plan is to use
+  [CUDA](http://stackoverflow.com/questions/19541620/solving-tridiagonal-linear-systems-in-cuda)
+  via [accelerate](https://hackage.haskell.org/package/accelerate) and
+  compare.
+
+* The use of
+  [dimensions](https://hackage.haskell.org/package/dimensional) in a
+  medium-sized example. It would have been nice to have tried the
+  [units](https://hackage.haskell.org/package/units) package but it
+  seemed harder work to use and, as ever, "Time's wingèd chariot" was
+  the enemy.
+
+The source for this post can be downloaded from
+[github](https://github.com/idontgetoutmuch/NumMethHaskell).
+
+Age-Dependent Populations
+=========================
+
 McKendrick / von Foerster
 -------------------------
 
@@ -55,22 +89,82 @@ different to experiencing one year but we further assume $v = 1$.
 We thus obtain
 
 $$
-\frac{\partial}{\partial t}n(a, t) + \frac{\partial n(a, t)}{\partial a} =
+\frac{\partial n(a, t)}{\partial t} + \frac{\partial n(a, t)}{\partial a} =
 - \mu(a, t)n(a, t)
 $$
 
-Erythropoiesis
-==============
+Gurtin / MacCamy
+----------------
 
-The production of red blood cells which contain haemoglobin (aka
- hemoglobin),
- [Erythropoiesis](https://en.wikipedia.org/wiki/Erythropoiesis), is
- modulated in a feedback loop by
- [erythropoietin](https://en.wikipedia.org/wiki/Erythropoietin). As
- can be seen in the overview by @Torbett2009, the full feedback loop
- is complex. So as not to lose ourselves in the details and following
- @Thibodeaux2011 and @BELAIR1995317, we consider a model with two
- compartments.
+To solve any PDE we need boundary and initial conditions. The number
+of births at time $t$ is
+
+$$
+n(0, t) = \int_0^\infty n(a, t) m(a, N(t))\, \mathrm{d}a
+$$
+
+where $m$ is the natality aka birth-modulus and
+
+$$
+N(t) = \int_0^\infty n(a, t)\, \mathrm{d}a
+$$
+
+and we further assume that the initial condition
+
+$$
+n(a, 0) = n_0(a)
+$$
+
+for some given $n_0$.
+
+@gurtin1974non focus on the situation where
+
+$$
+m(a, N(t)) = \beta(N)e^{-\alpha a}
+$$
+
+and we can also assume that the birth rate of Tribbles decreases
+exponentially with age and further that Tribbles can live
+forever. @gurtin1974non then transform the PDE to obtain a pair of
+linked ODEs which can then be solved numerically.
+
+Of course, we know what happens in the Enterprise and rather than
+continue with this example, let us turn our attention to the more
+serious subject of Malaria.
+
+Malaria
+=======
+
+I realise now that I went a bit overboard with references. Hopefully
+they don't interrupt the flow too much.
+
+The World Health Organisation (WHO) estimated that in 2015 there were
+214 million new cases of malaria resulting in 438,000 deaths (source:
+[Wikipedia](https://en.wikipedia.org/wiki/Malaria#Epidemiology)).
+
+The lifecycle of the plasmodium parasite that causes malaria is
+extremely ingenious. @Thibodeaux2011 model the human segment of the
+[plasmodium
+lifecycle](https://en.wikipedia.org/wiki/Malaria#Life_cycle) and
+further propose a way of determing an optimal treatment for an
+infected individual. @hall2013pharmacokinetic also model the effect of
+an anti-malarial. Let us content ourselves with reproducing part of
+the paper by @Thibodeaux2011.
+
+At one part of its sojourn in humans, plasmodium infects erythrocytes
+aka red blood cells. These latter contain haemoglobin (aka
+hemoglobin).  The process by which red blood cells are produced,
+[Erythropoiesis](https://en.wikipedia.org/wiki/Erythropoiesis), is
+modulated in a feedback loop by
+[erythropoietin](https://en.wikipedia.org/wiki/Erythropoietin). The
+plasmodium parasite severely disrupts this process. Presumably the
+resulting loss of haemoglobin is one reason that an infected
+individual feels ill.
+
+As can be seen in the overview by @Torbett2009,
+the full feedback loop is complex. So as not to lose ourselves in the
+details and following @Thibodeaux2011 and @BELAIR1995317, we consider
+a model with two compartments.
 
 * Precursors: prototype erythrocytes developing in the bone marrow
   with $p(\mu, t)$ being the density of such cells of age $\mu$ at
@@ -149,7 +243,9 @@ A Finite Difference Attempt
 Let us try solving the above model using a finite difference scheme
 observing that we currently have no basis for whether it has a
 solution and whether the finite difference scheme approximates such a
-solution!
+solution! We follow @Thibodeaux2011 who give a proof of convergence
+presumably with some conditions; any failure of the scheme is entirely
+mine.
 
 Divide up the age and time ranges, $[0, \mu_F]$, $[0, \nu_F]$ and $[0, T]$
 into equal sub-intervals,
@@ -201,8 +297,13 @@ $$
 Writing
 
 $$
-d _{1,i}^k = 1 + g^k\frac{\Delta t}{\Delta \mu} - \Delta t \sigma_i^k
+\begin{aligned}
+d_{1,i}^k &= 1 + g^k\frac{\Delta t}{\Delta \mu} - \Delta t \sigma_i^k \\
+d_{2,i}^k &= 1 + \frac{\Delta t}{\Delta \nu} - \Delta t \gamma_i^k
+\end{aligned}
 $$
+
+We can express the above in matrix form
 
 $$
 \begin{bmatrix}
@@ -227,6 +328,37 @@ p_2^k \\
 \ldots \\
 p_{n_1}^k \\
 \end{bmatrix}
+$$
+
+$$
+\begin{bmatrix}
+1 & 0 & 0 & \ldots & 0 & 0 \\
+-\frac{\Delta t}{\Delta \mu} & d_{2,1}^k & 0 & \ldots & 0 & 0\\
+0 & -\frac{\Delta t}{\Delta \mu} & d_{2,2}^k & \ldots & 0 & 0 \\
+\ldots & \ldots & \ldots & \ldots & \ldots & \ldots \\
+0 & 0 & 0 & \ldots &\ -\frac{\Delta t}{\Delta \mu} & d_{2,n_1}^k \\
+\end{bmatrix}
+\begin{bmatrix}
+m_0^{k+1} \\
+m_1^{k+1} \\
+m_2^{k+1} \\
+\ldots \\
+m_{n_2}^{k+1}
+\end{bmatrix}
+=
+\begin{bmatrix}
+g^k p_{n_1}^{k+1} \\
+m_1^k \\
+m_2^k \\
+\ldots \\
+m_{n_1}^k \\
+\end{bmatrix}
+$$
+
+Finally we can write
+
+$$
+E^{k+1} = \frac{E^k + \Delta t f^k}{1 + a_E^k\Delta T}
 $$
 
 > {-# OPTIONS_GHC -Wall #-}
@@ -583,6 +715,8 @@ safer to use their alternative of
 >                          (((n2 P.+ 1)><1) $ (map (/~ (mole / second / kilo gram)) b_2'0)),
 >                          bigE'0,
 >                          (0.0 *~ day))
+
+![](diagrams/Matures.png)
 
 References
 ==========
