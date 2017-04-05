@@ -31,14 +31,15 @@ displayHeader fn =
              )
 
 chart :: String ->
+         String ->
          [[(Double, Double)]] ->
          Renderable ()
-chart t obss = toRenderable layout
+chart t l obss = toRenderable layout
   where
 
     actual x l c = plot_lines_values .~ [x]
                    $ plot_lines_style  . line_color .~ opaque c
-                   $ plot_lines_title .~ l
+                   -- $ plot_lines_title .~ l
                    $ plot_lines_style  . line_width .~ 1.0
                    $ def
 
@@ -49,8 +50,8 @@ chart t obss = toRenderable layout
     actuals' = zipWith3 actual obss ls cs
 
     layout = layout_title .~ t
-           $ layout_plots .~ (map toPlot actuals') -- [toPlot actuals]
-           $ layout_y_axis . laxis_title .~ "Value"
+           $ layout_plots .~ (map toPlot actuals')
+           $ layout_y_axis . laxis_title .~ l
            $ layout_y_axis . laxis_override .~ axisGridHide
            $ layout_x_axis . laxis_title .~ "Time"
            $ layout_x_axis . laxis_override .~ axisGridHide
@@ -62,17 +63,8 @@ mus = map (/~ day ) $ iterate (+ deltaMu) (0.0 *~ day)
 nus :: [Double]
 nus = map (/~ day ) $ iterate (+ deltaNu) (0.0 *~ day)
 
--- pss :: [Double] -> [[(Double, Double)]]
--- pss us = map (\(p, _, _, _) -> zip us (concat $ toLists p)) ys
-
 selNth :: Int -> [a] -> [a]
 selNth n xs = map snd $ filter (\z -> fst z `mod` n == 0) (zip [0..] xs)
-
--- pss' :: [[(Double, Double)]]
--- pss' = take 15 $ selNth 10 (pss mus)
-
--- mss :: [Double] -> [[(Double, Double)]]
--- mss us = map (\(_, m, _, _, _) -> zip us (concat $ toLists m)) ys
 
 ps :: [Double]
 ps = map (\(p, _, _) -> p /~ (mole / kilo gram)) ys
@@ -81,27 +73,27 @@ ms :: [Double]
 ms = map (\(_, m, _) -> m /~ (mole / kilo gram)) ys
 
 es :: [Double]
-es = map (\(_, _, e) -> e /~ (mole / (metre * metre * metre))) ys
+es = map (\(_, _, e) -> e /~ muPerMl) ys
 
-diagrm :: String -> [[(Double, Double)]] -> Diagram Cairo
-diagrm t xss = fst $ runBackendR denv (chart t xss)
+diagrm :: String -> String -> [[(Double, Double)]] -> Diagram Cairo
+diagrm t l xss = fst $ runBackendR denv (chart t l xss)
+
+diagrmM :: String -> String -> [[(Double, Double)]] -> IO (Diagram Cairo)
+diagrmM t l xss = do
+  denv <- defaultEnv vectorAlignmentFns 600 500
+  return $ fst $ runBackendR denv (chart t l xss)
 
 main :: IO ()
 main = do
   mapM_ (\(x, y, z) -> printf "%4.3e, %4.3e, %4.3e\n"
                              (x /~ (mole / kilo gram))
                              (y /~ (mole / kilo gram))
-                             (z /~ (mole / (metre * metre * metre))))
+                             (z /~ muPerMl))
         ys
   displayHeader "diagrams/EPO.png"
-                (diagrm "EPO" [zip (map (/~ day) ts) es])
+                (diagrm "EPO" "mUI / mL" [zip (map (/~ day) ts) es])
   displayHeader "diagrams/Precursors.png"
-                (diagrm "Precursors" [zip (map (/~ day) ts) ps])
+                (diagrm "Precursors" "Cells / Kilogram " [zip (map (/~ day) ts) ps])
   displayHeader "diagrams/Matures.png"
-                (diagrm "Matures" [zip (map (/~ day) ts) (map (P.* 1e-11) ms)])
-  -- displayHeader "diagrams/PrecursorPop.png"
-  --               (diagrm "Precursor Population" pss')
-  -- displayHeader "diagrams/InitialMature.png"
-  --               (diagrm "Initial Mature" (mss nus))
+                (diagrm "Mature Erythrocytes" "Cells / Kilogram x 1e11" [zip (map (/~ day) ts) (map (P.* 1e-11) ms)])
 
-  -- putStrLn "Hello"

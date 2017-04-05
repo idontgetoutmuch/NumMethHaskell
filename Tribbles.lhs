@@ -238,7 +238,7 @@ E(0) = E_0
 $$
 
 A Finite Difference Attempt
-===========================
+---------------------------
 
 Let us try solving the above model using a finite difference scheme
 observing that we currently have no basis for whether it has a
@@ -361,6 +361,9 @@ $$
 E^{k+1} = \frac{E^k + \Delta t f^k}{1 + a_E^k\Delta T}
 $$
 
+A Haskell Implementation
+------------------------
+
 > {-# OPTIONS_GHC -Wall #-}
 > {-# LANGUAGE TypeFamilies #-}
 > {-# LANGUAGE NoImplicitPrelude #-}
@@ -381,6 +384,13 @@ $$
 > import Control.Monad.Writer
 > import Control.Monad.Loops
 
+Substances like erythropoietin (EPO) are measured in International
+Units and these cannot be converted to Moles (see
+@doi:10.1093/ndt/gfp058 for much more detail) so we have to pretend it
+really is measured in Moles as there seems to be no easy way to define
+what the dimensional package calls a base dimension. A typical amount
+for a person is 15 milli-IU / mill-litre but can reach much higher
+levels after loss of blood.
 
 > muPerMl :: (Fractional a, Num a) => Unit 'NonMetric DConcentration a
 > muPerMl = (milli mole) / (milli litre)
@@ -388,15 +398,8 @@ $$
 > bigE'0 :: Concentration Double
 > bigE'0 = 15.0 *~ muPerMl
 
-@Thibodeaux2011 give $g$ as
-
-> gThibodeaux :: Concentration Double  -> Dimensionless Double
-> gThibodeaux e = d / n
->   where
->     n = ((3.02 *~ one) * e + (0.31 *~ muPerMl))
->     d = (30.61 *~ muPerMl) + e
-
-From@Ackleh200621 but note that @Thibodeaux2011 seem to have $T = 20$.
+Let's set up our grid. We take these from @Ackleh200621 but note that
+@Thibodeaux2011 seem to have $T = 20$.
 
 > deltaT, deltaMu, deltaNu :: Time Double
 
@@ -423,23 +426,7 @@ From@Ackleh200621 but note that @Thibodeaux2011 seem to have $T = 20$.
 > ts :: [Time Double]
 > ts = take bigK $ 0.0 *~ day : (map (+ deltaT) ts)
 
-> g'0 :: Dimensionless Double
-> g'0 = gThibodeaux bigE'0
-
-> betaAckleh :: Time Double -> Frequency Double
-> betaAckleh mu
->   | mu < (0 *~ day) = error "betaAckleh: negative age"
->   | mu < (3 *~ day) = 2.773 *~ (one / day)
->   | otherwise       = 0.000 *~ (one / day)
-
-> gAckleh :: Concentration Double -> Dimensionless Double
-> gAckleh _e = 1.0 *~ one
-
-> sigmaAckleh :: Time Double ->
->                Time Double ->
->                Concentration Double ->
->                Frequency Double
-> sigmaAckleh mu _t e = betaAckleh mu * gAckleh e
+The birth rate for precursors
 
 > betaThibodeaux :: Time Double ->
 >                   Frequency Double
@@ -458,23 +445,41 @@ From@Ackleh200621 but note that @Thibodeaux2011 seem to have $T = 20$.
 >                    Frequency Double
 > sigmaThibodeaux mu _t e = gThibodeaux e * (betaThibodeaux mu - alphaThibodeaux e)
 
-> d_1'0 :: Int -> Dimensionless Double
-> d_1'0 i = (1 *~ one) + (g'0 * deltaT / deltaMu)
->           - deltaT * sigmaThibodeaux ((fromIntegral i *~ one) * deltaMu) undefined bigE'0
+and an alternative birth rate
 
-> lowers :: [Dimensionless Double]
-> lowers = replicate n1 (negate $ g'0 * deltaT / deltaMu)
+> betaAckleh :: Time Double -> Frequency Double
+> betaAckleh mu
+>   | mu < (0 *~ day) = error "betaAckleh: negative age"
+>   | mu < (3 *~ day) = 2.773 *~ (one / day)
+>   | otherwise       = 0.000 *~ (one / day)
 
-> diags :: [Dimensionless Double]
-> diags = g'0 : map d_1'0 [1..n1]
+> sigmaAckleh :: Time Double ->
+>                Time Double ->
+>                Concentration Double ->
+>                Frequency Double
+> sigmaAckleh mu _t e = betaAckleh mu * gAckleh e
 
-> uppers :: [Dimensionless Double]
-> uppers = replicate n1 (0.0 *~ one)
+
+@Thibodeaux2011 give the maturation rate of precursors $g$ as
+
+> gThibodeaux :: Concentration Double  -> Dimensionless Double
+> gThibodeaux e = d / n
+>   where
+>     n = ((3.02 *~ one) * e + (0.31 *~ muPerMl))
+>     d = (30.61 *~ muPerMl) + e
+
+and @Ackleh200621 give this as
+
+> gAckleh :: Concentration Double -> Dimensionless Double
+> gAckleh _e = 1.0 *~ one
 
 As in @Thibodeaux2011 we give quantities in terms of cells per
-kilogram of body weight.
+kilogram of body weight. Note that these really are moles on this
+occasion.
 
 > type CellDensity = Quantity (DAmountOfSubstance / DTime / DMass)
+
+Let's set the initial conditions.
 
 > p'0 :: Time Double -> CellDensity Double
 > p'0 mu' = (1e11 *~ one) * pAux mu'
@@ -494,7 +499,7 @@ kilogram of body weight.
 >       | otherwise       = 0.039827  *~ (mole / day / kilo gram) *
 >                           exp (((-0.0083) *~ (one / day)) * nu)
 
-Let's check that these give plausible results.
+And check that these give plausible results.
 
 > m_0Untyped :: Double -> Double
 > m_0Untyped nu = m_0 (nu *~ day) /~ (mole / day / kilo gram)
@@ -502,11 +507,28 @@ Let's check that these give plausible results.
 > p'0Untyped :: Double -> Double
 > p'0Untyped mu = p'0 (mu *~ day) /~ (mole / day / kilo gram)
 
-
     [ghci]
     import Numeric.Integration.TanhSinh
     result $ relative 1e-6 $ parTrap m_0Untyped 0.001 (nuF /~ day)
     result $ relative 1e-6 $ parTrap p'0Untyped 0.001 (muF /~ day)
+
+We can now create the components for the first matrix equation.
+
+> g'0 :: Dimensionless Double
+> g'0 = gThibodeaux bigE'0
+
+> d_1'0 :: Int -> Dimensionless Double
+> d_1'0 i = (1 *~ one) + (g'0 * deltaT / deltaMu)
+>           - deltaT * sigmaThibodeaux ((fromIntegral i *~ one) * deltaMu) undefined bigE'0
+
+> lowers :: [Dimensionless Double]
+> lowers = replicate n1 (negate $ g'0 * deltaT / deltaMu)
+
+> diags :: [Dimensionless Double]
+> diags = g'0 : map d_1'0 [1..n1]
+
+> uppers :: [Dimensionless Double]
+> uppers = replicate n1 (0.0 *~ one)
 
 @Thibodeaux2011 does not give a definition for $\phi$ so we use the
 equivalent $s_0$ from @Ackleh200621 which references @Banks2003:
@@ -519,19 +541,25 @@ equivalent $s_0$ from @Ackleh200621 which references @Banks2003:
 > b'0 :: [CellDensity Double]
 > b'0 = (s_0 (0.0 *~ day) * bigE'0) : (take n1 $ map p'0 (iterate (+ deltaMu) deltaMu))
 
+With these components in place we can now solve the implicit scheme
+and get the age distribution of precursors after one time step.
+
 > p'1 :: Matrix Double
 > p'1 = triDiagSolve (fromList (map (/~ one) lowers))
 >                    (fromList (map (/~ one) diags))
 >                    (fromList (map (/~ one) uppers))
 >                    (((n1 P.+1 )><1) (map (/~ (mole / second / kilo gram)) b'0))
 
-Death rates of mature erythrocytes.
+In order to create the components for the second matrix equation, we
+need the death rates of mature erythrocytes
 
 > gammaThibodeaux :: Time Double ->
 >                    Time Double ->
 >                    Quantity (DAmountOfSubstance / DMass) Double ->
 >                    Frequency Double
 > gammaThibodeaux _nu _t _bigM = 0.0083 *~ (one / day)
+
+We note an alternative for the death rate
 
 > gammaAckleh :: Time Double ->
 >                Time Double ->
@@ -558,6 +586,8 @@ or we can use the sum of the values used in the finite difference approximation
     [ghci]
     bigM'0'
 
+Finally we can create the components
+
 > d_2'0 :: Int -> Dimensionless Double
 > d_2'0 i = (1 *~ one) + (g'0 * deltaT / deltaNu)
 >           + deltaT * gammaThibodeaux ((fromIntegral i *~ one) * deltaNu) undefined bigM'0
@@ -575,13 +605,18 @@ or we can use the sum of the values used in the finite difference approximation
 > b_2'0 = (g'0 * ((p'1 `atIndex` (n1,0)) *~ (mole / second / kilo gram))) :
 >         (take n2 $ map m_0 (iterate (+ deltaNu) deltaNu))
 
+and then solve the implicit scheme to get the distribution of mature
+erythrocytes one time step ahead
+
 > m'1 :: Matrix Double
 > m'1 = triDiagSolve (fromList (map (/~ one) lowers2))
 >                    (fromList (map (/~ one) diags2))
 >                    (fromList (map (/~ one) uppers2))
 >                    (((n2 P.+ 1)><1) (map (/~ (mole / second / kilo gram)) b_2'0))
 
-@Ackleh2013 and @Ackleh200621 give $f$
+We need to complete the homeostatic loop by implmenting the feedback
+from the kidneys to the bone marrow. @Ackleh2013 and @Ackleh200621
+give $f$ as
 
 > fAckleh :: Time Double ->
 >            Quantity (DAmountOfSubstance / DMass) Double ->
@@ -595,11 +630,15 @@ or we can use the sum of the values used in the finite difference approximation
 
 The much older @BELAIR1995317 gives $f$ as
 
-fBelair _t m = a P./ (1 + k P.* (m P.** r))
-  where
-    a = 6570
-    k = 0.0382
-    r = 6.96
+> fBelair :: Time Double ->
+>            Quantity (DAmountOfSubstance / DMass) Double ->
+>            Quantity (DConcentration / DTime) Double
+> fBelair _t bigM = a / ((1.0 *~ one) + k * (bigM' ** r))
+>   where
+>     a = 6570 *~ (muPerMl / day)
+>     k = 0.0382 *~ one
+>     r = 6.96 *~ one
+>     bigM' = ((bigM /~ (mole / kilo gram)) *~ one) * (1e-11 *~ one)
 
 For the intial precursor population we can either use the
 integral of the initial distribution
@@ -645,11 +684,16 @@ safer to use their alternative of
 > a_E' :: Quantity (DAmountOfSubstance / DMass) Double -> Frequency Double
 > a_E' _bigP = 6.65 *~ (one / day)
 
+We now further calculate the concentration of EPO one time step ahead.
+
 > f'0 :: Quantity (DConcentration / DTime) Double
 > f'0 = fAckleh undefined bigM'0
 
 > bigE'1 :: Concentration Double
 > bigE'1 = (bigE'0 + deltaT * f'0) / (1.0 *~ one + deltaT * a_E' bigP'0)
+
+Having done this for one time step starting at $t=0$, it's easy to
+generalize this to an arbitrary time step.
 
 > d_1 :: Dimensionless Double ->
 >        Concentration Double ->
@@ -705,6 +749,8 @@ safer to use their alternative of
 >   tell [(bigP, bigM, ePrev)]
 >   return (psNew, msNew, eNew, tNew)
 
+We can now run the model for 100 days.
+
 > ys :: [(Quantity (DAmountOfSubstance / DMass) Double,
 >         Quantity (DAmountOfSubstance / DMass) Double,
 >         Concentration Double)]
@@ -716,7 +762,11 @@ safer to use their alternative of
 >                          bigE'0,
 >                          (0.0 *~ day))
 
+And now we can plot what happens for a period of 100 days.
+
+![](diagrams/Precursors.png)
 ![](diagrams/Matures.png)
+![](diagrams/EPO.png)
 
 References
 ==========
