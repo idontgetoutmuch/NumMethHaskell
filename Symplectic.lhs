@@ -57,8 +57,8 @@ A sort of manifesto
 -------------------
 
 
-Symplectic Integrator
-=====================
+Symplectic Integrators
+======================
 
 > {-# OPTIONS_GHC -Wall                   #-}
 > {-# OPTIONS_GHC -fno-warn-type-defaults #-}
@@ -74,52 +74,11 @@ Symplectic Integrator
 > import Data.Array.Accelerate.Linear              hiding (trace)
 > import Data.Array.Accelerate.Control.Lens
 > import qualified Linear                   as L
->
-> import Debug.Trace
 
-Let us consider the following Hamiltonian
 
-> bigH :: P.Floating a => a -> a -> a
-> bigH p q = p^2 / 2 - cos q
-
-Symplectic Euler
-
-$$p_{n+1} = p_n - h\nabla_q H(p_{n+1}, q_n)$$
-
-$$q_{n+1} = q_n + h\nabla_p H(p_{n+1}, q_n)$$
-
-If e.g.
-
-$$H(p, q) = \frac{1}{2}p^2 - \cos q$$
-
-then the scheme is explicit.
-
-Let's assume that the Hamiltonian is of the form $H(p, q) = T(q) +
-V(p)$ then the midpoint rule
-
-$$
-y_{n+1} = y_n + hJ^{-1}\nabla H(\frac{y_{n+1} + y_n}{2})
-$$
-
-which we can re-write as
-
-$$
-\begin{aligned}
-p_{n+1} &= p_n - h\nabla_q H(\frac{p_{n+1} + p_n}{2}, \frac{q_{n+1} + q_n}{2}) \\
-q_{n+1} &= q_n + h\nabla_p H(\frac{p_{n+1} + p_n}{2}, \frac{q_{n+1} + q_n}{2})
-\end{aligned}
-$$
-
-becomes
-
-$$
-\begin{aligned}
-p_{n+1} &= p_n - h\nabla_q T(\frac{q_{n+1} + q_n}{2}) \\
-q_{n+1} &= q_n + h\nabla_p V(\frac{p_{n+1} + p_n}{2})
-\end{aligned}
-$$
-
-Störmer-Verlet
+The [Störmer-Verlet
+scheme](http://www.unige.ch/~hairer/poly_geoint/week2.pdf) is an
+implicit symplectic method of order 2.
 
 $$
 \begin{aligned}
@@ -129,19 +88,56 @@ p_{n+1}     &= p_{n+1 / 2} - \frac{h}{2}\nabla_q H(p_{n+1 / 2}, q_{n+1})
 \end{aligned}
 $$
 
+Let's assume that the Hamiltonian is of the form $H(p, q) = T(q) +
+V(p)$ then this becomes an explicit scheme.
+
 $$
 \begin{aligned}
 p_{n+1 / 2} &= p_n         - \frac{h}{2}\nabla_q T(q_n) \\
-q_{n+1}     &= q_n         + \frac{h}{2}(\nabla_p V(p_{n+1 / 2}) + \nabla_q V(p_{n+1 / 2}) \\
+q_{n+1}     &= q_n         + \frac{h}{2}(\nabla_p V(p_{n+1 / 2}) + \nabla_q V(p_{n+1 / 2})) \\
 p_{n+1}     &= p_{n+1 / 2} - \frac{h}{2}\nabla_q T(q_{n+1})
 \end{aligned}
 $$
 
-For our example we have $\nabla_q T(q) = \sin q$ and $\nabla_p V(p) = p$
+Simple Pendulum
+---------------
+
+Consider the following Hamiltonian for the pendulum:
+
+$$
+H(q,p) = \frac{1}{2}p^2 - \cos q
+$$
+
+> bigH1 :: P.Floating a => a -> a -> a
+> bigH1 q p = p^2 / 2 - cos q
+
+> ham1 :: P.Floating a => [a] -> a
+> ham1 [qq1, pp1] = 0.5 * pp1^2 - cos qq1
+> ham1 _ = error "Hamiltonian defined for 2 generalized co-ordinates only"
+
+Although it is trivial to find the derivatives in this case, let us
+check using automatic symbolic differentiation
+
+> q1, q2, p1, p2 :: Sym a
+> q1 = var "q1"
+> q2 = var "q2"
+> p1 = var "p1"
+> p2 = var "p2"
+
+> nabla1 :: [[Sym Double]]
+> nabla1 = jacobian ((\x -> [x]) . ham1) [q1, p1]
+
+    [ghci]
+    nabla1
+
+which after a bit of simplification gives us $\nabla_q T(q) = \sin q$
+and $\nabla_p V(p) = p$ or
 
 > nablaQ, nablaP :: P.Floating a => a -> a
 > nablaQ = sin
 > nablaP = id
+
+One step of the Störmer-Verlet
 
 > oneStep :: P.Floating a => (a -> a) ->
 >                                  (a -> a) ->
@@ -156,23 +152,40 @@ For our example we have $\nabla_q T(q) = \sin q$ and $\nabla_p V(p) = p$
 >     pNew = pp2 - h2 * nabalQQ qNew
 
 > h :: Double
-> h = 0.01
+> h = 0.1
 
 > hs :: (Double, Double) -> [(Double, Double)]
 > hs = iterate (oneStep nablaQ nablaP h)
 
+We can plot the result in phase space
+
+FIXME: Plot here!
+
+or we can check that the energy is conserved directly
+
+    [ghci]
+    P.map (P.uncurry bigH1) $ P.take 5 $               hs (pi/4, 0.0)
+    P.map (P.uncurry bigH1) $ P.take 5 $ P.drop 1000 $ hs (pi/4, 0.0)
+
+
 Two body problem
+----------------
+
+Newton's equations of motions for the two body problem are
 
 $$
-\ddot{q}_1 = -\frac{q_1}{(q_1^2 + q_2^2)^{3/2}}, \quad
-\ddot{q}_2 = -\frac{q_2}{(q_1^2 + q_2^2)^{3/2}}
+\ddot{q}_1 = -\frac{x}{(x^2 + y^2)^{3/2}}, \quad
+\ddot{q}_2 = -\frac{y}{(x^2 + y^2)^{3/2}}
 $$
 
-Hamiltonian
+And we can re-write those to use Hamilton's equations with this Hamiltonian
 
 $$
 H(p_1,p_2,q_1,q_2) = \frac{1}{2}(p_1^2 +p_2^2) - \frac{1}{\sqrt{q_1^2 + q_2^2}}
 $$
+
+The advantage of using this small example is that we know the exact
+solution should we need it.
 
 > e, q10, q20, p10, p20 :: Double
 > e = 0.6
@@ -181,48 +194,62 @@ $$
 > p10 = 0.0
 > p20 = sqrt ((1 + e) / (1 - e))
 >
-> ham :: P.Floating a => [a] -> a
-> ham [pp1, pp2, qq1, qq2] = 0.5 * (pp1^2 + pp2^2) - recip (sqrt (qq1^2 + qq2^2))
-> ham _ = error "Hamiltonian defined for 4 generalized co-ordinates only"
+> ham2 :: P.Floating a => [a] -> a
+> ham2 [qq1, qq2, pp1, pp2] = 0.5 * (pp1^2 + pp2^2) - recip (sqrt (qq1^2 + qq2^2))
+> ham2 _ = error "Hamiltonian defined for 4 generalized co-ordinates only"
 
-> q1, q2, p1, p2 :: Sym a
-> q1 = var "q1"
-> q2 = var "q2"
-> p1 = var "p1"
-> p2 = var "p2"
+Again we can calculate the derivatives
 
-> testHam :: P.Floating a => [a] -> [[a]]
-> testHam xs = jacobian ((\x -> [x]) . ham) xs
+> nabla2 :: [[Sym Double]]
+> nabla2 = jacobian ((\x -> [x]) . ham2) [q1, q2, p1, p2]
 
-$$
-\begin{matrix}
-0.5*p1+0.5*p1 \\
-0.5*p2+0.5*p2 \\
-q1/(2.0*sqrt (q1*q1+q2*q2))/sqrt (q1*q1+q2*q2)/sqrt (q1*q1+q2*q2)+q1/(2.0*sqrt (q1*q1+q2*q2))/sqrt (q1*q1+q2*q2)/sqrt (q1*q1+q2*q2) \\
-q2/(2.0*sqrt (q1*q1+q2*q2))/sqrt (q1*q1+q2*q2)/sqrt (q1*q1+q2*q2)+q2/(2.0*sqrt (q1*q1+q2*q2))/sqrt (q1*q1+q2*q2)/sqrt (q1*q1+q2*q2)
-\end{matrix}
-$$
+    [ghci]
+    (P.mapM_ . P.mapM_) putStrLn . P.map (P.map show) $ nabla2
+
+which after some simplification becomes
 
 $$
 \begin{matrix}
-p_1 \\
-p_2 \\
 \frac{q_1}{(q_1^2 + q_2^2)^{3/2}} \\
-\frac{q_2}{(q_1^2 + q_2^2)^{3/2}}
+\frac{q_2}{(q_1^2 + q_2^2)^{3/2}} \\
+p_1 \\
+p_2
 \end{matrix}
 $$
+
+Here's one step of Störmer-Verlet using Haskell 98.
+
+> oneStepH98 :: Double -> (V2 Double, V2 Double) -> (V2 Double, V2 Double)
+> oneStepH98 hh prev = (qNew, pNew)
+>   where
+>     h2 = hh / 2
+>     hhs = V2 hh hh
+>     hh2s = V2 h2 h2
+>     p2' = psPrev - hh2s * nablaQ' qsPrev
+>     qNew = qsPrev + hhs * nablaP' p2'
+>     pNew = p2' - hh2s * nablaQ' qNew
+>     qsPrev = P.fst prev
+>     psPrev = P.snd prev
+>     nablaQ' qs = V2 (q1' / r) (q2' / r)
+>       where
+>         q1' = qs ^. L._x
+>         q2' = qs ^. L._y
+>         r   = (q1' ^ 2 + q2' ^ 2) ** (3/2)
+>     nablaP' ps = ps
+
+And here is the same thing using accelerate.
 
 > oneStep2 :: Double -> Exp (V2 Double, V2 Double) -> Exp (V2 Double, V2 Double)
-> oneStep2 h' prev = lift (qNew, pNew)
+> oneStep2 hh prev = lift (qNew, pNew)
 >   where
->     h2 = h' / 2
->     gs :: Exp (V2 Double)
->     gs = lift ((pure h') :: V2 Double)
->     hs' :: Exp (V2 Double)
->     hs' = (lift ((pure h2) :: V2 Double))
->     p2' = psPrev - hs' * nablaQ' qsPrev
->     qNew = qsPrev + gs * nablaP' p2'
->     pNew = p2' - hs' * nablaQ' qNew
+>     h2 = hh / 2
+>     hhs :: Exp (V2 Double)
+>     hhs = lift ((pure hh) :: V2 Double)
+>     hh2s :: Exp (V2 Double)
+>     hh2s = (lift ((pure h2) :: V2 Double))
+>     p2' = psPrev - hh2s * nablaQ' qsPrev
+>     qNew = qsPrev + hhs * nablaP' p2'
+>     pNew = p2' - hh2s * nablaQ' qNew
 >     qsPrev = A.fst prev
 >     psPrev = A.snd prev
 >     nablaQ' :: Exp (V2 Double) -> Exp (V2 Double)
@@ -234,38 +261,20 @@ $$
 >     nablaP' :: Exp (V2 Double) -> Exp (V2 Double)
 >     nablaP' ps = ps
 
-> oneStepH98 :: Double -> (V2 Double, V2 Double) -> (V2 Double, V2 Double)
-> oneStepH98 h' prev = (qNew, pNew)
->   where
->     h2 = h' / 2
->     gs = pure h'
->     hs' = pure h2
->     p2' = psPrev - hs' * nablaQ' qsPrev
->     qNew = qsPrev + gs * nablaP' p2'
->     pNew = p2' - hs' * nablaQ' qNew
->     qsPrev = P.fst prev
->     psPrev = P.snd prev
->     nablaQ' qs = V2 (q1' / r) (q2' / r)
->       where
->         q1' = qs ^. L._x
->         q2' = qs ^. L._y
->         r   = (q1' ^ 2 + q2' ^ 2) ** (3/2)
->     nablaP' ps = ps
-
 > oneStep2' :: Double ->
 >              Exp (V2 Double, V2 Double) ->
 >              Exp (V2 Double, V2 Double) ->
 >              Exp (V2 Double, V2 Double)
-> oneStep2' h' prev dummies = lift (xs + qNew, pNew)
+> oneStep2' hh prev dummies = lift (xs + qNew, pNew)
 >   where
->     h2 = h' / 2
->     gs :: Exp (V2 Double)
->     gs = lift ((pure h') :: V2 Double)
->     hs' :: Exp (V2 Double)
->     hs' = (lift ((pure h2) :: V2 Double))
->     p2' = psPrev - hs' * nablaQ' qsPrev
->     qNew = qsPrev + gs * nablaP' p2'
->     pNew = p2' - hs' * nablaQ' qNew
+>     h2 = hh / 2
+>     hhs :: Exp (V2 Double)
+>     hhs = lift ((pure hh) :: V2 Double)
+>     hh2s :: Exp (V2 Double)
+>     hh2s = (lift ((pure h2) :: V2 Double))
+>     p2' = psPrev - hh2s * nablaQ' qsPrev
+>     qNew = qsPrev + hhs * nablaP' p2'
+>     pNew = p2' - hh2s * nablaQ' qNew
 >     qsPrev = A.fst prev
 >     psPrev = A.snd prev
 >     xs = A.fst dummies
@@ -279,13 +288,13 @@ $$
 >     nablaP' ps = ps
 
 > symplecticEuler ::  Double -> Exp (V2 Double, V2 Double) -> Exp (V2 Double, V2 Double)
-> symplecticEuler h' prev = lift(qNew, pNew)
+> symplecticEuler hh prev = lift(qNew, pNew)
 >   where
 >     qsPrev = A.fst prev
 >     psPrev = A.snd prev
->     gs = lift ((pure h') :: V2 Double)
->     pNew = psPrev - gs * nablaQ' qsPrev
->     qNew = qsPrev + gs * nablaP' pNew
+>     hhs = lift ((pure hh) :: V2 Double)
+>     pNew = psPrev - hhs * nablaQ' qsPrev
+>     qNew = qsPrev + hhs * nablaP' pNew
 >     nablaQ' :: Exp (V2 Double) -> Exp (V2 Double)
 >     nablaQ' qs = lift (V2 (q1' / r) (q2' / r))
 >       where
@@ -318,13 +327,13 @@ $$
 > reallyRunSteps' = run runSteps'
 
 > symplecticEuler98 ::  Double -> (V2 Double, V2 Double) -> (V2 Double, V2 Double)
-> symplecticEuler98 h' prev = (qNew, pNew)
+> symplecticEuler98 hh prev = (qNew, pNew)
 >   where
 >     qsPrev = P.fst prev
 >     psPrev = P.snd prev
->     gs = pure h'
->     pNew = psPrev - gs * nablaQ' qsPrev
->     qNew = qsPrev + gs * nablaP' pNew
+>     hhs = pure hh
+>     pNew = psPrev - hhs * nablaQ' qsPrev
+>     qNew = qsPrev + hhs * nablaP' pNew
 >     nablaQ' qs = V2 (q1' / r) (q2' / r)
 >       where
 >         q1' = qs ^. L._x
