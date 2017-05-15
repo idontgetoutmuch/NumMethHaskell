@@ -66,6 +66,15 @@ Symplectic Integrators
 > {-# LANGUAGE FlexibleContexts #-}
 > {-# LANGUAGE TypeOperators    #-}
 
+> module Main (
+>     main
+>   , bigH1
+>   , hs
+>   , nabla1
+>   , nabla2
+>   , bigH2BodyH98
+>   ) where
+>
 > import Data.Number.Symbolic
 > import Numeric.AD
 > import Prelude                            as P
@@ -219,22 +228,22 @@ $$
 
 Here's one step of Störmer-Verlet using Haskell 98.
 
-> oneStepH98 :: Double -> (V2 Double, V2 Double) -> (V2 Double, V2 Double)
-> oneStepH98 hh prev = (qNew, pNew)
+> oneStepH98 :: Double -> V2 (V2 Double) -> V2 (V2 Double)
+> oneStepH98 hh prev = V2 qNew pNew
 >   where
 >     h2 = hh / 2
 >     hhs = V2 hh hh
 >     hh2s = V2 h2 h2
->     p2' = psPrev - hh2s * nablaQ' qsPrev
->     qNew = qsPrev + hhs * nablaP' p2'
->     pNew = p2' - hh2s * nablaQ' qNew
->     qsPrev = P.fst prev
->     psPrev = P.snd prev
->     nablaQ' qs = V2 (q1' / r) (q2' / r)
+>     pp2 = psPrev - hh2s * nablaQ' qsPrev
+>     qNew = qsPrev + hhs * nablaP' pp2
+>     pNew = pp2 - hh2s * nablaQ' qNew
+>     qsPrev = prev ^. L._x
+>     psPrev = prev ^. L._y
+>     nablaQ' qs = V2 (qq1 / r) (qq2 / r)
 >       where
->         q1' = qs ^. L._x
->         q2' = qs ^. L._y
->         r   = (q1' ^ 2 + q2' ^ 2) ** (3/2)
+>         qq1 = qs ^. L._x
+>         qq2 = qs ^. L._y
+>         r   = (qq1 ^ 2 + qq2 ^ 2) ** (3/2)
 >     nablaP' ps = ps
 
 And here is the same thing using accelerate.
@@ -261,49 +270,6 @@ And here is the same thing using accelerate.
 >     nablaP' :: Exp (V2 Double) -> Exp (V2 Double)
 >     nablaP' ps = ps
 
-> oneStep2' :: Double ->
->              Exp (V2 Double, V2 Double) ->
->              Exp (V2 Double, V2 Double) ->
->              Exp (V2 Double, V2 Double)
-> oneStep2' hh prev dummies = lift (xs + qNew, pNew)
->   where
->     h2 = hh / 2
->     hhs :: Exp (V2 Double)
->     hhs = lift ((pure hh) :: V2 Double)
->     hh2s :: Exp (V2 Double)
->     hh2s = (lift ((pure h2) :: V2 Double))
->     p2' = psPrev - hh2s * nablaQ' qsPrev
->     qNew = qsPrev + hhs * nablaP' p2'
->     pNew = p2' - hh2s * nablaQ' qNew
->     qsPrev = A.fst prev
->     psPrev = A.snd prev
->     xs = A.fst dummies
->     nablaQ' :: Exp (V2 Double) -> Exp (V2 Double)
->     nablaQ' qs = lift (V2 (q1' / r) (q2' / r))
->       where
->         q1' = qs ^. _x
->         q2' = qs ^. _y
->         r   = (q1' ^ 2 + q2' ^ 2) ** (3/2)
->     nablaP' :: Exp (V2 Double) -> Exp (V2 Double)
->     nablaP' ps = ps
-
-> symplecticEuler ::  Double -> Exp (V2 Double, V2 Double) -> Exp (V2 Double, V2 Double)
-> symplecticEuler hh prev = lift(qNew, pNew)
->   where
->     qsPrev = A.fst prev
->     psPrev = A.snd prev
->     hhs = lift ((pure hh) :: V2 Double)
->     pNew = psPrev - hhs * nablaQ' qsPrev
->     qNew = qsPrev + hhs * nablaP' pNew
->     nablaQ' :: Exp (V2 Double) -> Exp (V2 Double)
->     nablaQ' qs = lift (V2 (q1' / r) (q2' / r))
->       where
->         q1' = qs ^. _x
->         q2' = qs ^. _y
->         r   = (q1' ^ 2 + q2' ^ 2) ** (3/2)
->     nablaP' :: Exp (V2 Double) -> Exp (V2 Double)
->     nablaP' ps = ps
-
 > nSteps :: Int
 > nSteps = 100
 
@@ -317,41 +283,18 @@ And here is the same thing using accelerate.
 > runSteps :: Acc (Array DIM1 (V2 Double, V2 Double))
 > runSteps = A.scanl (\s _x -> (oneStep2 h s)) dummyStart dummyInputs
 
-> runSteps' :: Acc (Array DIM1 (V2 Double, V2 Double))
-> runSteps' = A.scanl (oneStep2' h) dummyStart dummyInputs
-
 > reallyRunSteps :: (Array DIM1 (V2 Double, V2 Double))
 > reallyRunSteps = run runSteps
 
-> reallyRunSteps' :: (Array DIM1 (V2 Double, V2 Double))
-> reallyRunSteps' = run runSteps'
 
-> symplecticEuler98 ::  Double -> (V2 Double, V2 Double) -> (V2 Double, V2 Double)
-> symplecticEuler98 hh prev = (qNew, pNew)
->   where
->     qsPrev = P.fst prev
->     psPrev = P.snd prev
->     hhs = pure hh
->     pNew = psPrev - hhs * nablaQ' qsPrev
->     qNew = qsPrev + hhs * nablaP' pNew
->     nablaQ' qs = V2 (q1' / r) (q2' / r)
->       where
->         q1' = qs ^. L._x
->         q2' = qs ^. L._y
->         r   = (q1' ^ 2 + q2' ^ 2) ** (3/2)
->     nablaP' ps = ps
-
-> dummyStartH98 :: (V2 Double, V2 Double)
-> dummyStartH98 = (V2 q10 q20, V2 p10 p20)
+> dummyStartH98 :: V2 (V2 Double)
+> dummyStartH98 = V2 (V2 q10 q20) (V2 p10 p20)
 >
-> dummyInputsH98 :: [(V2 Double, V2 Double)]
-> dummyInputsH98 = P.replicate nSteps (pure 0.0 :: V2 Double, pure 0.0 :: V2 Double)
+> dummyInputsH98 :: [V2 (V2 Double)]
+> dummyInputsH98 = P.replicate nSteps (V2 (V2 0.0 0.0) (V2 0.0 0.0))
 
-> runStepsH98 :: [(V2 Double, V2 Double)]
+> runStepsH98 :: [V2 (V2 Double)]
 > runStepsH98= P.scanl (\s _x -> (oneStepH98 h s)) dummyStartH98 dummyInputsH98
-
-> runStepsSE :: [(V2 Double, V2 Double)]
-> runStepsSE = P.scanl (\s _x -> (symplecticEuler98 0.01 s)) dummyStartH98 dummyInputsH98
 
 > bigH2BodyH98 :: (V2 Double, V2 Double) -> Double
 > bigH2BodyH98 x = ke + pe
@@ -362,3 +305,4 @@ And here is the same thing using accelerate.
 > main :: IO ()
 > main = do
 >   putStrLn $ show $ reallyRunSteps
+>   putStrLn $ show $ runStepsH98
