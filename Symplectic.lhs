@@ -78,7 +78,7 @@ Symplectic Integrators
 > import Data.Number.Symbolic
 > import Numeric.AD
 > import Prelude                            as P
-> import Data.Array.Accelerate              as A   hiding ((^), iterate)
+> import Data.Array.Accelerate              as A   hiding ((^))
 > import Data.Array.Accelerate.LLVM.Native  as CPU
 > import Data.Array.Accelerate.Linear              hiding (trace)
 > import Data.Array.Accelerate.Control.Lens
@@ -164,7 +164,7 @@ One step of the Störmer-Verlet
 > h = 0.1
 
 > hs :: (Double, Double) -> [(Double, Double)]
-> hs = iterate (oneStep nablaQ nablaP h)
+> hs = P.iterate (oneStep nablaQ nablaP h)
 
 We can plot the result in phase space
 
@@ -196,13 +196,6 @@ $$
 The advantage of using this small example is that we know the exact
 solution should we need it.
 
-> e, q10, q20, p10, p20 :: Double
-> e = 0.6
-> q10 = 1 - e
-> q20 = 0.0
-> p10 = 0.0
-> p20 = sqrt ((1 + e) / (1 - e))
->
 > ham2 :: P.Floating a => [a] -> a
 > ham2 [qq1, qq2, pp1, pp2] = 0.5 * (pp1^2 + pp2^2) - recip (sqrt (qq1^2 + qq2^2))
 > ham2 _ = error "Hamiltonian defined for 4 generalized co-ordinates only"
@@ -248,53 +241,64 @@ Here's one step of Störmer-Verlet using Haskell 98.
 
 And here is the same thing using accelerate.
 
-> oneStep2 :: Double -> Exp (V2 Double, V2 Double) -> Exp (V2 Double, V2 Double)
-> oneStep2 hh prev = lift (qNew, pNew)
+> oneStep2 :: Double -> Exp (V2 (V2 Double)) -> Exp (V2 (V2 Double))
+> oneStep2 hh prev = lift $ V2 qNew pNew
 >   where
 >     h2 = hh / 2
->     hhs :: Exp (V2 Double)
->     hhs = lift ((pure hh) :: V2 Double)
->     hh2s :: Exp (V2 Double)
->     hh2s = (lift ((pure h2) :: V2 Double))
->     p2' = psPrev - hh2s * nablaQ' qsPrev
->     qNew = qsPrev + hhs * nablaP' p2'
->     pNew = p2' - hh2s * nablaQ' qNew
->     qsPrev = A.fst prev
->     psPrev = A.snd prev
+>     hhs = lift $ V2 hh hh
+>     hh2s = lift $ V2 h2 h2
+>     pp2 = psPrev - hh2s * nablaQ' qsPrev
+>     qNew = qsPrev + hhs * nablaP' pp2
+>     pNew = pp2 - hh2s * nablaQ' qNew
+>     qsPrev :: Exp (V2 Double)
+>     qsPrev = prev ^. _x
+>     psPrev = prev ^. _y
 >     nablaQ' :: Exp (V2 Double) -> Exp (V2 Double)
->     nablaQ' qs = lift (V2 (q1' / r) (q2' / r))
+>     nablaQ' qs = lift (V2 (qq1 / r) (qq2 / r))
 >       where
->         q1' = qs ^. _x
->         q2' = qs ^. _y
->         r   = (q1' ^ 2 + q2' ^ 2) ** (3/2)
+>         qq1 = qs ^. _x
+>         qq2 = qs ^. _y
+>         r   = (qq1 ^ 2 + qq2 ^ 2) ** (3/2)
 >     nablaP' :: Exp (V2 Double) -> Exp (V2 Double)
 >     nablaP' ps = ps
 
+With initial values below the solution is an ellipse with eccentricity
+$e$.
+
+> e, q10, q20, p10, p20 :: Double
+> e = 0.6
+> q10 = 1 - e
+> q20 = 0.0
+> p10 = 0.0
+> p20 = sqrt ((1 + e) / (1 - e))
+
+> inits :: Exp (V2 (V2 Double))
+> inits = lift (V2 (V2 q10 q20) (V2 p10 p20))
+
+We can either keep all the steps of the simulation using accelerate
+and the CPU
+
 > nSteps :: Int
 > nSteps = 100
-
-> dummyStart :: Exp (V2 Double, V2 Double)
-> dummyStart = lift (V2 q10 q20, V2 p10 p20)
-
-> dummyInputs :: Acc (Array DIM1 (V2 Double, V2 Double))
+>
+> dummyInputs :: Acc (Array DIM1 (V2 (V2 Double)))
 > dummyInputs = A.use $ A.fromList (Z :. nSteps) $
->               P.replicate nSteps (pure 0.0 :: V2 Double, pure 0.0 :: V2 Double)
+>                P.replicate nSteps (V2 (V2 0.0 0.0) (V2 0.0 0.0))
 
-> runSteps :: Acc (Array DIM1 (V2 Double, V2 Double))
-> runSteps = A.scanl (\s _x -> (oneStep2 h s)) dummyStart dummyInputs
+> runSteps :: Array DIM1 (V2 (V2 Double))
+> runSteps = CPU.run $ A.scanl (\s _x -> (oneStep2 h s)) inits dummyInputs
 
-> reallyRunSteps :: (Array DIM1 (V2 Double, V2 Double))
-> reallyRunSteps = run runSteps
-
-
-> dummyStartH98 :: V2 (V2 Double)
-> dummyStartH98 = V2 (V2 q10 q20) (V2 p10 p20)
+> initsH98 :: V2 (V2 Double)
+> initsH98 = V2 (V2 q10 q20) (V2 p10 p20)
 >
 > dummyInputsH98 :: [V2 (V2 Double)]
 > dummyInputsH98 = P.replicate nSteps (V2 (V2 0.0 0.0) (V2 0.0 0.0))
 
 > runStepsH98 :: [V2 (V2 Double)]
-> runStepsH98= P.scanl (\s _x -> (oneStepH98 h s)) dummyStartH98 dummyInputsH98
+> runStepsH98= P.scanl (\s _x -> (oneStepH98 h s)) initsH98 dummyInputsH98
+
+> runSteps' :: Exp (V2 (V2 Double)) -> Exp (V2 (V2 Double))
+> runSteps' = A.iterate (lift nSteps) (oneStep2 h)
 
 > bigH2BodyH98 :: (V2 Double, V2 Double) -> Double
 > bigH2BodyH98 x = ke + pe
@@ -302,7 +306,14 @@ And here is the same thing using accelerate.
 >     pe = let V2 q1' q2' = P.fst x in negate $ recip (sqrt (q1'^2 + q2'^2))
 >     ke = let V2 p1' p2' = P.snd x in 0.5 * (p1'^2 + p2'^2)
 
+
+> bigH2BodyH98' :: (V2 Double, V2 Double) -> Double
+> bigH2BodyH98' x = ke + pe
+>   where
+>     pe = let V2 q1' q2' = P.fst x in negate $ recip (sqrt (q1'^2 + q2'^2))
+>     ke = let V2 p1' p2' = P.snd x in 0.5 * (p1'^2 + p2'^2)
+
 > main :: IO ()
 > main = do
->   putStrLn $ show $ reallyRunSteps
+>   putStrLn $ show $ runSteps
 >   putStrLn $ show $ runStepsH98
