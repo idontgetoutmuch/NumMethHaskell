@@ -66,8 +66,9 @@ Symplectic Integrators
 > {-# LANGUAGE FlexibleContexts #-}
 > {-# LANGUAGE TypeOperators    #-}
 
-> module Main (
->     main
+> module Symplectic (
+>     runSteps
+>   , h
 >   , bigH1
 >   , hs
 >   , nabla1
@@ -161,7 +162,7 @@ One step of the Störmer-Verlet
 >     pNew = pp2 - h2 * nabalQQ qNew
 
 > h :: Double
-> h = 0.1
+> h = 0.01
 
 > hs :: (Double, Double) -> [(Double, Double)]
 > hs = P.iterate (oneStep nablaQ nablaP h)
@@ -272,14 +273,17 @@ $e$.
 > p10 = 0.0
 > p20 = sqrt ((1 + e) / (1 - e))
 
+> initsH98 :: V2 (V2 Double)
+> initsH98 = V2 (V2 q10 q20) (V2 p10 p20)
+>
 > inits :: Exp (V2 (V2 Double))
-> inits = lift (V2 (V2 q10 q20) (V2 p10 p20))
+> inits = lift initsH98
 
 We can either keep all the steps of the simulation using accelerate
 and the CPU
 
 > nSteps :: Int
-> nSteps = 100
+> nSteps = 10000
 >
 > dummyInputs :: Acc (Array DIM1 (V2 (V2 Double)))
 > dummyInputs = A.use $ A.fromList (Z :. nSteps) $
@@ -288,14 +292,15 @@ and the CPU
 > runSteps :: Array DIM1 (V2 (V2 Double))
 > runSteps = CPU.run $ A.scanl (\s _x -> (oneStep2 h s)) inits dummyInputs
 
-> initsH98 :: V2 (V2 Double)
-> initsH98 = V2 (V2 q10 q20) (V2 p10 p20)
->
+Or we can do the same in plain Haskell
+
 > dummyInputsH98 :: [V2 (V2 Double)]
 > dummyInputsH98 = P.replicate nSteps (V2 (V2 0.0 0.0) (V2 0.0 0.0))
 
 > runStepsH98 :: [V2 (V2 Double)]
 > runStepsH98= P.scanl (\s _x -> (oneStepH98 h s)) initsH98 dummyInputsH98
+
+![](diagrams/symplectic.png)
 
 > runSteps' :: Exp (V2 (V2 Double)) -> Exp (V2 (V2 Double))
 > runSteps' = A.iterate (lift nSteps) (oneStep2 h)
