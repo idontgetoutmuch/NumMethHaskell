@@ -68,6 +68,9 @@ Symplectic Integrators
 
 > module Symplectic (
 >     runSteps
+>   , runSteps'
+>   , reallyRunSteps'
+>   , inits
 >   , h
 >   , bigH1
 >   , hs
@@ -302,8 +305,27 @@ Or we can do the same in plain Haskell
 
 ![](diagrams/symplectic.png)
 
-> runSteps' :: Exp (V2 (V2 Double)) -> Exp (V2 (V2 Double))
-> runSteps' = A.iterate (lift nSteps) (oneStep2 h)
+We'd like to measure performance and running the above for many steps
+might use up all available memory. Let's confine ourselves to looking
+at the final result.
+
+> runSteps' :: Int -> Exp (V2 (V2 Double)) -> Exp (V2 (V2 Double))
+> runSteps' nSteps = A.iterate (lift nSteps) (oneStep2 h)
+
+> reallyRunSteps' :: Int -> Array DIM1 (V2 (V2 Double))
+> reallyRunSteps' nSteps = CPU.run $
+>                          A.scanl (\s _x -> runSteps' nSteps s) inits
+>                          (A.use $ A.fromList (Z :. 1) [V2 (V2 0.0 0.0) (V2 0.0 0.0)])
+
+Let's see what accelerate generates with
+
+~~~~ {.haskell include="RunAccGPU.hs"}
+~~~~
+
+It's a bit verbose but we can look at the key "loop": while5.
+
+~~~~ {.llvm .numberLines include="RunAccGPU.ll"}
+~~~~
 
 > bigH2BodyH98 :: (V2 Double, V2 Double) -> Double
 > bigH2BodyH98 x = ke + pe
