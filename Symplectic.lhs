@@ -317,6 +317,12 @@ at the final result.
 >                          A.scanl (\s _x -> runSteps' nSteps s) inits
 >                          (A.use $ A.fromList (Z :. 1) [V2 (V2 0.0 0.0) (V2 0.0 0.0)])
 
+Performance
+===========
+
+Accelerate's LLVM
+-----------------
+
 Let's see what accelerate generates with
 
 ~~~~ {.haskell include="RunAccGPU.hs"}
@@ -332,9 +338,17 @@ And then we can run it for $10^8$ steps and see how long it takes.
 ~~~~ {include="TimeAccGPU.txt"}
 ~~~~
 
+Julia's LLVM
+------------
+
 Let's try the same problem in Julia.
 
 ~~~~ {.julia include="JuliaCPU.jl"}
+~~~~
+
+Again we can see how long it takes
+
+~~~~ {include="TimeJulGPU.txt"}
 ~~~~
 
 > bigH2BodyH98 :: (V2 Double, V2 Double) -> Double

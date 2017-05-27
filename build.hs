@@ -10,6 +10,7 @@ main = shakeArgs shakeOptions{shakeFiles="_build"} $ do
     want [ "diagrams" </> "symplectic" <.> "png"
          , "RunAccGPU" <.> "ll"
          , "TimeAccGPU" <.> "txt"
+         , "TimeJulGPU" <.> "txt"
          ]
 
     let compile file = do
@@ -38,3 +39,7 @@ main = shakeArgs shakeOptions{shakeFiles="_build"} $ do
     "RunAccGPU" %> \out -> do
       compile (out -<.> "hs")
 
+    "TimeJulGPU" <.> "txt" %> \out -> do
+      (Exit _code, Stdout (_stdout :: String), Stderr (stderr :: String)) <-
+        cmd "time /Applications/Julia-0.5.app/Contents/Resources/julia/bin/julia JuliaCPU.jl"
+      writeFileChanged out stderr
