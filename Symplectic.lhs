@@ -327,6 +327,16 @@ It's a bit verbose but we can look at the key "loop": while5.
 ~~~~ {.llvm .numberLines include="RunAccGPU.ll"}
 ~~~~
 
+And then we can run it for $10^8$ steps and see how long it takes.
+
+~~~~ {include="TimeAccGPU.txt"}
+~~~~
+
+Let's try the same problem in Julia.
+
+~~~~ {.julia include="JuliaCPU.jl"}
+~~~~
+
 > bigH2BodyH98 :: (V2 Double, V2 Double) -> Double
 > bigH2BodyH98 x = ke + pe
 >   where
