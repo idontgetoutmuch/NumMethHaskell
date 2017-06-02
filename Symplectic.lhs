@@ -1,6 +1,6 @@
-% Rao-Blackwellisation
+% Haskell for Numerics?
 % Dominic Steinitz
-% 9th April 2017
+% 2nd June 2017
 
 ---
 bibliography: DynSys.bib
@@ -20,7 +20,7 @@ summary it wasn't as difficult as I had feared and the #ghc folks were
 extremely helpful.
 
 But maybe getting GHC to produce high performance numerical code is
-"swimming uphill". Also below is a comparison of a "state of the art"
+"swimming uphill". Below is a comparison of a "state of the art"
 numerical language, [Julia](https://julialang.org), and an alternative
 Haskell approach, using a Haskell domain-specific embedded language
 (DSEL),
@@ -58,9 +58,22 @@ situation and also provide higher performance.
 A sort of manifesto
 -------------------
 
+To summarise: what we'd like is type-safe blazingly fast numerical
+code. Type-safe can give use e.g. static guarantees that matrix
+multiplication is between compatible matrices and assurances that the
+units are correct. Here's an example of static typing helping ensure
+the correctness of [Kalman filter
+usage](https://hackage.haskell.org/package/kalman-1.0.0.2/docs/Numeric-Kalman.html#v:runKF)
+and here's a
+[package](https://hackage.haskell.org/package/dimensional-1.0.1.3/docs/Numeric-Units-Dimensional.html)
+that I have used successfully on a medium-sized project to ensure all
+units are correct.
 
 Symplectic Integrators
 ======================
+
+Let's take a simple solver, encode it in Haskell and Julia and see how
+well we can do.
 
 > {-# OPTIONS_GHC -Wall                   #-}
 > {-# OPTIONS_GHC -fno-warn-type-defaults #-}
@@ -179,11 +192,7 @@ One step of the Störmer-Verlet
 > hs :: (Double, Double) -> [(Double, Double)]
 > hs = P.iterate (oneStep nablaQ nablaP h)
 
-We can plot the result in phase space
-
-FIXME: Plot here!
-
-or we can check that the energy is conserved directly
+We can check that the energy is conserved directly
 
     [ghci]
     P.map (P.uncurry bigH1) $ P.take 5 $               hs (pi/4, 0.0)
@@ -312,16 +321,15 @@ Or we can do the same in plain Haskell
 > runStepsH98 :: [V2 (V2 Double)]
 > runStepsH98= P.scanl (\s _x -> (oneStepH98 h s)) initsH98 dummyInputsH98
 
+The fact that the phase diagram for the two objects is periodic is
+encouraging.
+
 ![](diagrams/symplectic.png)
 
-> bigH2BodyH98 :: (V2 Double, V2 Double) -> Double
-> bigH2BodyH98 x = ke + pe
->   where
->     pe = let V2 q1' q2' = P.fst x in negate $ recip (sqrt (q1'^2 + q2'^2))
->     ke = let V2 p1' p2' = P.snd x in 0.5 * (p1'^2 + p2'^2)
+And again we can check directly that the energy is conserved.
 
-> bigH2BodyH98' :: V2 (V2 Double) -> Double
-> bigH2BodyH98' z = ke + pe
+> bigH2BodyH98 :: V2 (V2 Double) -> Double
+> bigH2BodyH98 z = ke + pe
 >   where
 >     q = z ^. L._x
 >     p = z ^. L._y
@@ -329,8 +337,8 @@ Or we can do the same in plain Haskell
 >     ke = let V2 p1' p2' = p in 0.5 * (p1'^2 + p2'^2)
 
     [ghci]
-    P.maximum $ P.map bigH2BodyH98' $ P.take 100 $ P.drop 1000 runStepsH98
-    P.minimum $ P.map bigH2BodyH98' $ P.take 100 $ P.drop 1000 runStepsH98
+    P.maximum $ P.map bigH2BodyH98 $ P.take 100 $ P.drop 1000 runStepsH98
+    P.minimum $ P.map bigH2BodyH98 $ P.take 100 $ P.drop 1000 runStepsH98
 
 We'd like to measure performance and running the above for many steps
 might use up all available memory. Let's confine ourselves to looking
@@ -384,7 +392,7 @@ rookie error. Two things occur to me:
 1. Let's look at the llvm and see if we can we can find an
 explanation.
 
-2. Let's plot a chart of execution time versus number of steps to see
+2. Let's analyse execution time versus number of steps to see
 what the code generation cost is and the execution cost. It may be
 that Julia takes longer to generate code but has better execution
 times.
@@ -431,11 +439,8 @@ linreg([20,40,80,100],[5.7,9.8,18.1,22.2])
 ```
 
 Cleary the negative compilation time for Haskell is wrong but I think
-it's fair to infer that Juli has a higher start up cost and Haskell is
-2 times quicker.
+it's fair to infer that Julia has a higher start up cost and Haskell
+is 2 times quicker *but* as noted above this may be because of
+different math libraries.
 
-> main :: IO ()
-> main = do
->   putStrLn $ show $ runSteps
->   putStrLn $ show $ runStepsH98
 
