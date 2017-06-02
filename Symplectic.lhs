@@ -14,8 +14,10 @@ Summary
 -------
 
 Back in January, a colleague pointed out to me that GHC did not
-produce very efficient code for performing floating point *abs*. Below
-is a write-up of my notes about hacking on GHC.
+produce very efficient code for performing floating point *abs*. I
+have yet to produce a write-up of my notes about hacking on GHC: in
+summary it wasn't as difficult as I had feared and the #ghc folks were
+extremely helpful.
 
 But maybe getting GHC to produce high performance numerical code is
 "swimming uphill". Also below is a comparison of a "state of the art"
@@ -76,6 +78,7 @@ Symplectic Integrators
 >   , hs
 >   , nabla1
 >   , nabla2
+>   , runStepsH98
 >   , bigH2BodyH98
 >   ) where
 >
@@ -91,7 +94,13 @@ Symplectic Integrators
 
 The [Störmer-Verlet
 scheme](http://www.unige.ch/~hairer/poly_geoint/week2.pdf) is an
-implicit symplectic method of order 2.
+implicit symplectic method of order 2. Being symplectic is important
+as it preserves the energy of the systems being solved. If, for
+example, we were to use
+[RK4](https://en.wikipedia.org/wiki/Runge–Kutta_methods#Examples) to
+simulate planetary motion then the planets would either crash into the
+sun or leave the solar system: not a very accurate representation of
+reality.
 
 $$
 \begin{aligned}
@@ -305,6 +314,24 @@ Or we can do the same in plain Haskell
 
 ![](diagrams/symplectic.png)
 
+> bigH2BodyH98 :: (V2 Double, V2 Double) -> Double
+> bigH2BodyH98 x = ke + pe
+>   where
+>     pe = let V2 q1' q2' = P.fst x in negate $ recip (sqrt (q1'^2 + q2'^2))
+>     ke = let V2 p1' p2' = P.snd x in 0.5 * (p1'^2 + p2'^2)
+
+> bigH2BodyH98' :: V2 (V2 Double) -> Double
+> bigH2BodyH98' z = ke + pe
+>   where
+>     q = z ^. L._x
+>     p = z ^. L._y
+>     pe = let V2 q1' q2' = q in negate $ recip (sqrt (q1'^2 + q2'^2))
+>     ke = let V2 p1' p2' = p in 0.5 * (p1'^2 + p2'^2)
+
+    [ghci]
+    P.maximum $ P.map bigH2BodyH98' $ P.take 100 $ P.drop 1000 runStepsH98
+    P.minimum $ P.map bigH2BodyH98' $ P.take 100 $ P.drop 1000 runStepsH98
+
 We'd like to measure performance and running the above for many steps
 might use up all available memory. Let's confine ourselves to looking
 at the final result.
@@ -325,7 +352,7 @@ Accelerate's LLVM
 
 Let's see what accelerate generates with
 
-~~~~ {.haskell include="RunAccGPU.hs"}
+~~~~ {.haskell .numberLines include="RunAccGPU.hs"}
 ~~~~
 
 It's a bit verbose but we can look at the key "loop": while5.
@@ -335,7 +362,7 @@ It's a bit verbose but we can look at the key "loop": while5.
 
 And then we can run it for $10^8$ steps and see how long it takes.
 
-~~~~ {include="TimeAccGPU.txt"}
+~~~~ {.numberLines include="TimeAccGPU.txt"}
 ~~~~
 
 Julia's LLVM
@@ -343,28 +370,72 @@ Julia's LLVM
 
 Let's try the same problem in Julia.
 
-~~~~ {.julia include="JuliaCPU.jl"}
+~~~~ {.julia .numberLines include="JuliaCPU.jl"}
 ~~~~
 
 Again we can see how long it takes
 
-~~~~ {include="TimeJulGPU.txt"}
+~~~~ {.numberLines include="TimeJulGPU.txt"}
 ~~~~
 
-> bigH2BodyH98 :: (V2 Double, V2 Double) -> Double
-> bigH2BodyH98 x = ke + pe
->   where
->     pe = let V2 q1' q2' = P.fst x in negate $ recip (sqrt (q1'^2 + q2'^2))
->     ke = let V2 p1' p2' = P.snd x in 0.5 * (p1'^2 + p2'^2)
+Surprisingly it takes longer but I am Julia novice so it could be some
+rookie error. Two things occur to me:
 
+1. Let's look at the llvm and see if we can we can find an
+explanation.
 
-> bigH2BodyH98' :: (V2 Double, V2 Double) -> Double
-> bigH2BodyH98' x = ke + pe
->   where
->     pe = let V2 q1' q2' = P.fst x in negate $ recip (sqrt (q1'^2 + q2'^2))
->     ke = let V2 p1' p2' = P.snd x in 0.5 * (p1'^2 + p2'^2)
+2. Let's plot a chart of execution time versus number of steps to see
+what the code generation cost is and the execution cost. It may be
+that Julia takes longer to generate code but has better execution
+times.
+
+~~~~ {.llvm .numberLines include="RunJulGPU.ll"}
+~~~~
+
+We can see two things:
+
+1. Julia doesn't use SIMD by default. We can change this by using
+`-O3`. In the event (I don't reproduce it here), this makes very
+little difference to performance.
+
+2. Julia generates
+```{.llvm}
+%15 = call double @"julia_^_71741"(double %14, double 1.500000e+00) #0
+```
+whereas GHC generates
+```{.llvm}
+%26 = tail call double @llvm.pow.f64(double %25, double 1.500000e+00) #2
+```
+Now it is entirely possible that this results in usage of different
+libMs, the Julia calling openlibm and GHC calling the system libm
+which on my machine is the one that comes with MAC OS X and is
+apparently quite a lot
+[faster](http://info.prelert.com/blog/os-x-maths-functions-are-the-fastest). We
+could try compiling the actual llvm and replacing the Julia calls with
+`pow` but maybe that is the subject for another blog post.
+
+Just in case, "on-the-fly" compilation is obscuring runtime
+performance let's try running both the Haskell and Julia for 20m, 40m,
+80m and 100m steps.
+
+Haskell
+```{.julia}
+linreg([20,40,80,100],[2.0,4.0,7.9,10.1])
+(-0.03000000000000025,0.1005)
+```
+
+Julia
+```{.julia}
+linreg([20,40,80,100],[5.7,9.8,18.1,22.2])
+(1.5600000000000005,0.2065)
+```
+
+Cleary the negative compilation time for Haskell is wrong but I think
+it's fair to infer that Juli has a higher start up cost and Haskell is
+2 times quicker.
 
 > main :: IO ()
 > main = do
 >   putStrLn $ show $ runSteps
 >   putStrLn $ show $ runStepsH98
+

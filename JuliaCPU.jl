@@ -16,13 +16,13 @@ x3 = SVector{2,SVector{2,Float64}}(x1,x2)
     h2 = h / 2
     @inbounds qsPrev = prev[1]
     @inbounds psPrev = prev[2]
-    function nablaQQ(qs)
+    @inline function nablaQQ(qs)
         @inbounds q1 = qs[1]
         @inbounds q2 = qs[2]
         r = (q1^2 + q2^2) ^ (3/2)
         return SVector{2,Float64}(q1 / r, q2 / r)
     end
-    function nablaPP(ps)
+    @inline function nablaPP(ps)
         return ps
     end
     p2 = psPrev - h2 * nablaQQ(qsPrev)
