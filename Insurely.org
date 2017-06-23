@@ -1,0 +1,112 @@
+#+TITLE:     Bayesian Change Point Detection
+#+AUTHOR:    Dominic Steinitz
+#+EMAIL:     dominic@steinitz.org
+#+DATE:      [2017-07-17 Mon]
+#+DESCRIPTION: Bayesian change point analysis of UK / South Korea trade statistics
+#+LANGUAGE:  en
+
+* Introduction
+
+** Change Point Detection
+
+ * [2016-12-16 Fri], UK Chancellor tweets
+
+#+BEGIN_QUOTE
+Arrived in South Korea, a growing trade opportunity for
+the UK where exports have doubled over the last year.
+Now worth nearly £11bn.
+#+END_QUOTE
+
+ * But these days, UK Office of National Statistics makes this easy to
+   verify.
+
+** A Framework for Exotic Financial Derivatives
+
+To be or not to be
+
+* Quarterly Trade Data
+
+#+BEGIN_SRC R :exports none :session R-session
+library(rstan)
+library(zoo)
+library(ggplot2)
+
+library(coda)
+
+ukstats <- "https://www.ons.gov.uk"
+bop <- "economy/nationalaccounts/balanceofpayments"
+ds <- "datasets/tradeingoodsmretsallbopeu2013timeseriesspreadsheet/current/mret.csv"
+
+mycsv <- read.csv(paste(ukstats,"file?uri=",bop,ds,sep="/"),stringsAsFactors=FALSE)
+
+ns <- which(grepl("Korea", names(mycsv)))
+length(ns)
+names(mycsv[ns[1]])
+names(mycsv[ns[2]])
+names(mycsv[ns[3]])
+
+korean <- mycsv[grepl("Korea", names(mycsv))]
+imports <- korean[grepl("Imports", names(korean))]
+exports <- korean[grepl("Exports", names(korean))]
+balance <- korean[grepl("Balance", names(korean))]
+
+df <- data.frame(mycsv[grepl("Title", names(mycsv))],
+                 imports,
+                 exports,
+                 balance)
+colnames(df) <- c("Title", "Imports", "Exports", "Balance")
+
+startQ <- which(grepl("1998 Q1",df$Title))
+endQ <- which(grepl("2017 Q1",df$Title))
+dfQ <- df[startQ:endQ,]
+
+tab <- data.frame(kr=as.numeric(dfQ$Exports),
+                  krLabs=as.numeric(as.Date(as.yearqtr(dfQ$Title,format='%Y Q%q'))))
+
+ggplot(tab, aes(x=as.Date(tab$krLabs), y=tab$kr)) + geom_line() +
+    theme(legend.position="bottom") +
+    ggtitle("Goods Exports UK / South Korea (Quarterly)") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    xlab("Date") +
+    ylab("Value (£m)")
+
+ggsave("diagrams/quarterly.png")
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_center
+#+ATTR_LATEX: :height 0.9\textheight
+[[./diagrams/quarterly.png]]
+#+END_center
+
+* Annual Trade Data
+
+#+BEGIN_SRC R :exports none :session R-session
+startY <- grep("^1998$",df$Title)
+endY <- grep("^2016$",df$Title)
+dfYear <- df[startY:endY,]
+
+tabY <- data.frame(kr=as.numeric(dfYear$Exports),
+                   krLabs=as.numeric(dfYear$Title))
+
+ggplot(tabY, aes(x=tabY$krLabs, y=tabY$kr)) + geom_line() +
+    theme(legend.position="bottom") +
+    ggtitle("Goods Exports UK / South Korea (Annual)") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    xlab("Date") +
+    ylab("Value (£m)")
+
+ggsave("diagrams/annual.png")
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_center
+#+ATTR_LATEX: :height 0.9\textheight
+[[./diagrams/annual.png]]
+#+END_center
+
+* Second
+
+[[./diagrams/PyMC3.png]]
