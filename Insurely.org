@@ -4,10 +4,25 @@
 #+DATE:      [2017-07-17 Mon]
 #+DESCRIPTION: Bayesian change point analysis of UK / South Korea trade statistics
 #+LANGUAGE:  en
+#+BEAMER_THEME: Frankfurt [height=20pt]
+#+OPTIONS:   H:3
+#+LATEX_HEADER: \RequirePackage{fancyvrb}
+#+LATEX_HEADER: \DefineVerbatimEnvironment{verbatim}{Verbatim}{fontsize=\scriptsize}
+
 
 * Introduction
 
-** Change Point Detection
+** Two Presentations for the Price of One
+*** A Framework for Exotic Financial Derivatives
+
+ * At the end of 2006 Barclays managed more than 35 templates,
+   representing a total population of several thousand (exotic)
+   trades.
+ * The various downstream systems need to be able to process the new
+   trade type.
+ * Templates took months to release.
+
+*** Change Point Detection
 
  * [2016-12-16 Fri], UK Chancellor tweets
 
@@ -20,11 +35,11 @@ Now worth nearly £11bn.
  * But these days, UK Office of National Statistics makes this easy to
    verify.
 
-** A Framework for Exotic Financial Derivatives
 
-To be or not to be
+* Change Point Detection
+** Office for National Statistics (ONS)
 
-* Quarterly Trade Data
+*** Quarterly Trade Data
 
 #+BEGIN_SRC R :exports none :session R-session
 library(rstan)
@@ -76,11 +91,11 @@ ggsave("diagrams/quarterly.png")
 #+RESULTS:
 
 #+BEGIN_center
-#+ATTR_LATEX: :height 0.9\textheight
+#+ATTR_LATEX: :height 0.85\textheight
 [[./diagrams/quarterly.png]]
 #+END_center
 
-* Annual Trade Data
+*** Annual Trade Data
 
 #+BEGIN_SRC R :exports none :session R-session
 startY <- grep("^1998$",df$Title)
@@ -103,10 +118,86 @@ ggsave("diagrams/annual.png")
 #+RESULTS:
 
 #+BEGIN_center
-#+ATTR_LATEX: :height 0.9\textheight
+#+ATTR_LATEX: :height 0.85\textheight
 [[./diagrams/annual.png]]
 #+END_center
 
-* Second
+*** Monthly Trade Data
+
+
+#+BEGIN_SRC R :exports none :session R-session
+startM <- grep("1998 JAN",df$Title)
+endM <- grep("2017 APR",df$Title)
+dfMonth <- df[startM:endM,]
+
+tabM <- data.frame(kr=as.numeric(dfMonth$Exports),
+                   krLabs=as.numeric(as.Date(as.yearmon(dfMonth$Title,format='%Y %B'))))
+
+ggplot(tabM, aes(x=as.Date(tabM$krLabs), y=tabM$kr)) + geom_line() +
+    theme(legend.position="bottom") +
+    ggtitle("Goods Exports UK / South Korea (Monthly)") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    xlab("Date") +
+    ylab("Value (£m)")
+
+ggsave("diagrams/monthly.png")
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_center
+#+ATTR_LATEX: :height 0.85\textheight
+[[./diagrams/monthly.png]]
+#+END_center
+
+** Naive Model
+
+*** Stan I
+
+#+BEGIN_SRC :exports code
+data {
+  int<lower=1> N;
+  vector[N] x;
+  vector[N] y;
+}
+
+parameters {
+  real tau;
+  real mu1;
+  real mu2;
+  real gamma1;
+  real gamma2;
+
+  real<lower=0> sigma1;
+  real<lower=0> sigma2;
+}
+#+END_SRC
+
+*** Stan II
+
+#+BEGIN_SRC :exports code
+model {
+  real mu;
+  real gamma;
+  real sigma;
+
+  mu1 ~ normal(0, 10);
+  mu2 ~ normal(0, 10);
+  gamma1 ~ normal(0, 10);
+  gamma2 ~ normal(0, 10);
+  sigma1 ~ normal(0, 10);
+  sigma2 ~ normal(0, 10);
+  tau ~ uniform(0,N+1);
+
+  for (i in 1:N) {
+    mu = i < tau ? mu1 : mu2;
+    gamma = i < tau ? gamma1 : gamma2;
+    sigma = i < tau ? sigma1 : sigma2;
+    y[i] ~ normal(mu * x[i] + gamma, sigma);
+  }
+}
+#+END_SRC
+
+* Framework for Exotic Derivatives
 
 [[./diagrams/PyMC3.png]]
