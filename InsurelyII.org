@@ -1,0 +1,190 @@
+#+OPTIONS: d:(not "BLOG")
+
+#+BEGIN_SRC emacs-lisp :exports none
+;; make org mode allow eval of some langs
+(org-babel-do-load-languages
+ 'org-babel-load-languages
+ '((emacs-lisp . t)
+   (python . t)
+   (haskell . t)
+   (R . t)))
+#+END_SRC
+
+#+RESULTS:
+: ((emacs-lisp . t) (python . t) (haskell . t) (R . t))
+
+#+TITLE:     Bayesian Change Point Detection
+#+AUTHOR:    Dominic Steinitz
+#+EMAIL:     dominic@steinitz.org
+#+DATE:      [2017-07-17 Mon]
+#+DESCRIPTION: Bayesian change point analysis of UK / South Korea trade statistics
+#+LANGUAGE:  en
+#+BEAMER_THEME: Frankfurt [height=20pt]
+#+OPTIONS:   H:3
+#+LATEX_HEADER: \RequirePackage{fancyvrb}
+#+LATEX_HEADER: \DefineVerbatimEnvironment{verbatim}{Verbatim}{fontsize=\scriptsize}
+#+LATEX_HEADER: \usepackage[style=alphabetic]{biblatex}
+
+* Framework for Exotic Derivatives                             :presentation:
+
+** Section
+
+*** What is an Option
+
+An option or derivative is a contract giving the owner the right, but
+not the obligation, to buy (call) or sell (put) an underlying asset at
+a specified price (aka the strike), on or before a specified date.
+
+**** Mathematically
+$$
+c = (x - k)^+
+p = (k - x)^+
+$$
+
+**** In Haskell
+#+BEGIN_SRC haskell :export code :session hask
+call k x = max (x - k) 0
+put k x = max (k - x) 0
+#+END_SRC
+
+#+RESULTS:
+
+*** Call Chart
+
+#+BEGIN_SRC R :exports none :session R-II-session
+  library(ggplot2)
+
+  x <- seq(0.0, 5, 0.1)
+  fun.1 <- function(x){return(max(x - 2.5, 0))}
+  y <- unlist(lapply(x,fun.1))
+  df <- data.frame(x)
+  df$y <- y
+
+  ggplot(df, aes(x=x, y=y)) + geom_line() +
+  ggsave("diagrams/call.png")
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_center
+#+ATTR_LATEX: :height 0.85\textheight
+[[./diagrams/call.png]]
+#+END_center
+
+*** Put Chart
+
+#+BEGIN_SRC R :exports none :session R-II-session
+  x <- seq(0.0, 5, 0.1)
+  fun.2 <- function(x){return(max(2.5 - x, 0))}
+  y <- unlist(lapply(x,fun.2))
+  df <- data.frame(x)
+  df$y <- y
+
+  ggplot(df, aes(x=x, y=y)) + geom_line() +
+  ggsave("diagrams/put.png")
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_center
+#+ATTR_LATEX: :height 0.85\textheight
+[[./diagrams/put.png]]
+#+END_center
+
+
+*** Exotic
+
+ * Baskets
+   - an option on a portfolio of underlyings
+ * Compound options
+   - Options on other options, e.g. a call on a call
+ * Path dependent options
+   - barrier options–payout locked-in when underlying hits trigger
+   - lookback options–payout based on highest or lowest price during
+     the lookback period
+   - Asian options–payout derived from average value of underlying
+     over a specified window
+   - Autocallables–will early redeem if a particular barrier condition
+     is met
+   - knock-in put
+
+*** Trade Lifecycle
+
+ * Sales interact with the customers
+ * Structurers create new products, often on customer request
+ * Quants provide mathematical models and formal description of trades
+   (payout functions)
+ * Risk management validate and sign-off the payout functions
+ * Traders derive the final price, manage the trade over its lifetime
+   and analyse upcoming events
+ * Payments systems handle payment events throughout the lifetime of
+   the trade
+
+*** Functional Payout Framework
+
+ * \cite{Jones_2000} \citeauthor{Jones_2000} \citetitle{Jones_2000}
+ * Barclays 2006
+ * A standardized representation for describing payoffs
+ * A common suite of tools for trades which use this representation
+   - Pricing via C / Monte Carlo
+   - Mathematical / \LaTeX representation / Mathematica for risk management
+   - pricing and risk management
+   - barrier analysis
+   - payments and other lifecycle events
+
+*** Functional Payout Framework
+
+**** Specifying a Trade
+
+ * Trade type is Haskell script
+ * Trade parameters e.g. start date, strike, expiration date, barrier
+   levels, etc
+ * Fixings e.g. prices on Asian in
+
+**** Backends
+
+ * Pricing via MC or PDE
+ * \LaTeX
+ * Payments
+ * Barriers
+ * Mathematica
+
+*** Some Examples
+
+#+BEGIN_SRC haskell :export code :session haskII
+perf :: Date -> Date -> Asset -> Double
+perf t1 t2 asset =
+  observe asset t2 / observe asset t1 - 1
+
+bestOf :: (List Asset, Date, Date) -> Double
+bestOf (assets', startDate', endDate') =
+  foldl1 max perfs where
+    assets = name "Assets" assets'
+    startDate = name "Starting date" startDate'
+    endDate = name "End date" endDate'
+    perfs = map (perf startDate endDate) assets
+#+END_SRC
+
+*** Some Examples
+
+#+BEGIN_SRC haskell :export code :session haskII
+cliquetDemo_v2
+  ( name "Asset" -> asset
+  , name "Global floor" -> gf
+  , name "Global cap" -> gc
+  , name "Local floor" -> lf
+  , name "Local cap" -> lc
+  , name "Initial date" -> inDate
+  , name "Dates" -> dates
+  , name "Payment date" -> payDate
+  )
+  = max gf $ min gc $ sum perfs
+  where
+    cliquet d d' = (d', max lf $ min lc $ perf d d' asset)
+    (_, perfs) = mapAccumL cliquet inDate dates
+#+END_SRC
+
+# As far as I can tell we need this for reftex but not for actual
+# citation production as long as we have an ok .bbl file.
+
+

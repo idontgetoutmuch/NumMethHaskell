@@ -1,3 +1,19 @@
+#+OPTIONS: d:(not "BLOG")
+#+EXCLUDE_TAGS: presentation
+
+#+BEGIN_SRC emacs-lisp :exports none
+;; make org mode allow eval of some langs
+(org-babel-do-load-languages
+ 'org-babel-load-languages
+ '((emacs-lisp . t)
+   (python . t)
+   (haskell . t)
+   (R . t)))
+#+END_SRC
+
+#+RESULTS:
+: ((emacs-lisp . t) (python . t) (haskell . t) (R . t))
+
 #+TITLE:     Bayesian Change Point Detection
 #+AUTHOR:    Dominic Steinitz
 #+EMAIL:     dominic@steinitz.org
@@ -124,7 +140,6 @@ ggsave("diagrams/annual.png")
 
 *** Monthly Trade Data
 
-
 #+BEGIN_SRC R :exports none :session R-session
 startM <- grep("1998 JAN",df$Title)
 endM <- grep("2017 APR",df$Title)
@@ -152,7 +167,7 @@ ggsave("diagrams/monthly.png")
 
 ** Naive Model
 
-*** Stan I
+*** Naive Stan I
 
 #+BEGIN_SRC :exports code
 data {
@@ -173,7 +188,7 @@ parameters {
 }
 #+END_SRC
 
-*** Stan II
+*** Naive Stan II
 
 #+BEGIN_SRC :exports code
 model {
@@ -198,6 +213,533 @@ model {
 }
 #+END_SRC
 
+*** Some Test Data
+
+#+BEGIN_SRC R :exports none :session LR-session
+library(rstan)
+library(ggplot2)
+
+x <- c(1:100)
+set.seed(42)
+z1 <- rnorm(50,0.0,2.1)
+z2 <- rnorm(50,0.0,2.2)
+mu1 <- 1.0
+mu2 <- 2.0
+gamma1 <- 10.0
+gamma2 <- -40.0
+y1 <- mu1 * x[1:50] + gamma1 + z1
+y2 <- mu2 * x[51:100] + gamma2 + z2
+y <- c(y1,y2)
+
+test_df <- as.data.frame(x)
+test_df$y = y
+
+write.csv(test_df, file="data/test-data.csv")
+
+ggplot(test_df, aes(x=x, y=y)) + geom_line() +
+    theme(legend.position="bottom") +
+    ggtitle("Test Data") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    xlab("Independent") +
+    ylab("Dependent")
+
+ggsave("diagrams/test-data.png")
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_center
+#+ATTR_LATEX: :height 0.85\textheight
+[[./diagrams/test-data.png]]
+#+END_center
+
+*** Inferred Change Point
+
+#+BEGIN_SRC R :exports none :session LR-session
+fitMN <- stan(
+    file = "lr-changepoint-naive.stan",
+    data = list(x = x, y = y, N = length(y)),
+    chains = 4,
+    warmup = 1000,
+    iter = 2000,
+    cores = 4,
+    refresh = 500,
+    seed=42
+)
+
+chain_df <- as.data.frame(extract(fitMN))
+ggplot(data=chain_df, aes(chain_df$tau)) + geom_histogram(breaks=seq(0, length(y)))
+
+ggsave("diagrams/naive-tau-hist.png")
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_center
+#+ATTR_LATEX: :height 0.85\textheight
+[[./diagrams/naive-tau-hist.png]]
+#+END_center
+
+** PyMC3
+
+*** The Same in Python
+
+#+BEGIN_SRC python :exports none :session py3-lr-session
+  from pymc3 import Model, Normal, HalfNormal
+
+  from pymc3 import NUTS, sample
+
+  from pymc3 import Uniform
+
+  from pymc3.math import switch
+
+  import matplotlib.pyplot as plt
+
+  from pymc3 import gelman_rubin
+
+  from pymc3 import plot_posterior
+
+  import theano.tensor as tt
+
+  import pandas as pd
+
+  df = pd.read_csv("data/test-data.csv")
+
+  v = df["x"].tolist()
+  w = df["y"].tolist()
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_SRC python :exports both :session py3-lr-session
+  chg_model = Model()
+
+  with chg_model:
+    
+    alpha1 = Normal('alpha1', mu=0, sd=10)
+    alpha2 = Normal('alpha2', mu=0, sd=10)
+    beta1  = Normal( 'beta1', mu=0, sd=10)
+    beta2  = Normal( 'beta2', mu=0, sd=10)
+    sigma1 = HalfNormal('sigma1', sd=10)
+    sigma2 = HalfNormal('sigma2', sd=10)
+    tau = Uniform('tau', lower=0, upper=len(w) + 1)
+    
+    alpha = switch(tau >= v, alpha1, alpha2)
+    beta  = switch(tau >= v,  beta1,  beta2)
+    sigma = switch(tau >= v, sigma1, sigma2)
+    
+    mu = alpha + beta * v
+    
+    Y_obs = Normal('Y_obs', mu=mu, sd=sigma, observed=w)
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_SRC python :exports none :session py3-lr-session
+  with chg_model:
+    trace = sample()
+
+  from pymc3 import traceplot
+
+  traceplot(trace);
+
+  plt.savefig("diagrams/naive-py3.png")
+#+END_SRC
+
+#+RESULTS:
+
+*** The Results
+
+#+BEGIN_center
+#+ATTR_LATEX: :height 0.85\textheight
+[[./diagrams/naive-py3.png]]
+#+END_center
+
+*** What Went Wrong?
+:PRESENTATION:
+ * Stan uses "burn-in" to initialise.
+ * PyMC3 uses ADVI.
+:END:
+:BLOG:
+Variational inference (VI) is a scalable technique for approximate
+Bayesian inference. Automatic differentiation variational inference
+(ADVI) is a way of automating VI so that all that is needed is the
+model and the data.
+:END:
+
+
+*** Diagnostic
+
+#+BEGIN_SRC R :exports none :session LR-session
+library(bayesplot)
+posterior2 <- extract(fitMN, inc_warmup = TRUE, permuted = FALSE)
+color_scheme_set("mix-blue-pink")
+
+p <- mcmc_trace(posterior2,  pars = c("mu1", "mu2", "tau"), n_warmup = 1000,
+                facet_args = list(nrow = 3, labeller = label_parsed))
+p + facet_text(size = 15)
+ggsave("diagrams/naive-R-diagnostics.png")
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_center
+#+ATTR_LATEX: :height 0.85\textheight
+[[./diagrams/naive-R-diagnostics.png]]
+#+END_center
+
+*** Python Diagnostics ADVI
+
+#+BEGIN_SRC python :exports none :session py3-lr-session
+from pymc3 import init_nuts
+
+with chg_model:
+  #MAP
+  start_map, nuts_step = init_nuts(init='MAP')
+  #ADVI
+  start_advi, nuts_step = init_nuts(init='ADVI')
+#+END_SRC
+
+#+BEGIN_SRC python :exports both :session py3-lr-session
+  pd.DataFrame(list(start_advi.items()))
+#+END_SRC
+
+#+RESULTS:
+:         0          1
+: 0   beta1   1.307549
+: 1  alpha2   2.251540
+: 2  alpha1   3.327910
+: 3  sigma2   8.354255
+: 4   beta2   1.512960
+: 5     tau  73.073964
+: 6  sigma1   6.992683
+
+*** Python Diagnostics MAP
+
+#+BEGIN_SRC python :exports both :session py3-lr-session
+  pd.DataFrame(list(start_map.items()))
+#+END_SRC
+
+#+RESULTS:
+:                 0                   1
+: 0           beta1  0.9680002398415648
+: 1          alpha2  -37.86057522849939
+: 2          alpha1  10.729059293077137
+: 3  tau_interval__                 0.0
+: 4           beta2  1.9750114311467755
+: 5    sigma2_log__  0.7086888732834176
+: 6    sigma1_log__  0.8616867832117518
+
+*** Not Continuous
+
+ * ADVI probably breaks because the posterior is not continuous
+ * Idea: use sigmoid (soft step) rather than (hard) step function.
+
+#+BEGIN_SRC python :exports none :session py3-lr-session
+import numpy as np
+from scipy.stats import logistic
+
+x = np.arange(-5, 5, 0.1);
+u = logistic.cdf(1*x)
+v = logistic.cdf(3*x)
+y = logistic.cdf(2*x)
+z = 0.5 * (np.sign(x) + 1)
+plt.plot(x, y, 'r', linewidth=5)
+plt.plot(x, z, 'g', linewidth=5)
+plt.plot(x, u, 'b', linewidth=5)
+plt.plot(x, v, 'y', linewidth=5)
+
+plt.savefig("diagrams/sigmoid.png")
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_center
+#+ATTR_LATEX: :height 0.5\textheight
+[[./diagrams/sigmoid.png]]
+#+END_center
+
+*** PyMC3 Second Attempt
+
+#+BEGIN_SRC python :exports none :session py3-lr-session
+chg_cont_model = Model()
+#+END_SRC
+
+#+BEGIN_SRC python :exports code :session py3-lr-session
+with chg_cont_model:
+    
+    alpha1 = Normal('alpha1', mu=0, sd=10)
+    alpha2 = Normal('alpha2', mu=0, sd=10)
+    beta1  = Normal( 'beta1', mu=0, sd=10)
+    beta2  = Normal( 'beta2', mu=0, sd=10)
+    sigma1 = HalfNormal('sigma1', sd=10)
+    sigma2 = HalfNormal('sigma2', sd=10)
+    
+    tau = Uniform('tau', lower=0, upper=len(w) + 1)
+    
+    weight = tt.nnet.sigmoid(2 * (v - tau))
+    
+    alpha = weight * alpha2 + (1 - weight) * alpha1
+    beta = weight * beta2 + (1 - weight) * beta1
+    sigma = weight * sigma2 + (1 - weight) * sigma1
+    
+    mu = alpha + beta * v
+    
+    Y_obs = Normal('Y_obs', mu=mu, sd=sigma, observed=w)
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_SRC python :exports none :session py3-lr-session
+  with chg_cont_model:
+    
+    trace = sample()
+
+  from pymc3 import traceplot
+
+  traceplot(trace);
+
+  plt.savefig("diagrams/cont-py3.png")
+#+END_SRC
+
+#+RESULTS:
+
+*** The Results
+
+#+BEGIN_center
+#+ATTR_LATEX: :height 0.85\textheight
+[[./diagrams/cont-py3.png]]
+#+END_center
+
+
+** Stan Again
+
+*** Stan Second Attempt I
+
+#+BEGIN_SRC :exports code
+functions {
+  vector interp(vector w, vector wc, vector a) {
+    return w * a[1] + wc * a[2];
+  }
+}
+
+data {
+  int<lower=1> N;
+  vector[N] x;
+  vector[N] y;
+}
+
+transformed data {
+  vector[N] steps;
+  for (n in 1:N) steps[n] = 2 * n;
+}
+
+parameters {
+  real<lower=0, upper=N+1> tau;
+  vector[2] mu;
+  vector[2] gamma;
+  vector<lower=0>[2] sigma;
+}
+#+END_SRC
+
+*** Stan Second Attempt II
+
+#+BEGIN_SRC :exports code
+
+model {
+  vector[N] w = inv_logit(steps - 2 * tau);
+  vector[N] wc = 1 - w;
+
+  y ~ normal(x .* interp(w, wc, mu) + interp(w, wc, gamma),
+             interp(w, wc, sigma));
+
+  mu ~ normal(0, 10);
+  gamma ~ normal(0, 10);
+  sigma ~ normal(0, 10);
+}
+#+END_SRC
+
+*** Inferred Change Point
+
+#+BEGIN_SRC R :exports none :session LR-session
+fitMC <- stan(
+    file = "lr-changepoint-cont.stan",
+    data = list(x = x, y = y, N = length(y)),
+    chains = 4,
+    warmup = 1000,
+    iter = 2000,
+    cores = 4,
+    refresh = 500,
+    seed=42
+)
+
+chain_cont_df <- as.data.frame(extract(fitMC))
+ggplot(data=chain_cont_df, aes(chain_cont_df$tau)) + geom_histogram(breaks=seq(0, length(y)))
+
+ggsave("diagrams/cont-tau-hist.png")
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_center
+#+ATTR_LATEX: :height 0.85\textheight
+[[./diagrams/naive-tau-hist.png]]
+#+END_center
+
+
+** The Promise
+
+*** Four Variants
+
+ * I promised four variants
+ * But here are two more for free
+ * Stan manual implies making time discrete and the marginalising it
+   out
+ * [[https://pymc-devs.github.io/pymc3/notebooks/getting_started.html#Case-study-2:-Coal-mining-disasters][PyMC3 documentation]] also implies making time discrete but using
+   Metropolis-Hastings for this variable rather than NUTS
+
+
+** Back to the Real World
+
+*** Finally, Did UK / South Korea Change?
+
+#+BEGIN_SRC R :exports none :session R-session
+fitMCK <- stan(
+    file = "lr-changepoint-cont.stan",
+    data = list(x = XM$krLabs, y = yM, N = length(yM)),
+    chains = 4,
+    warmup = 1000,
+    iter = 2000,
+    cores = 4,
+    refresh = 500,
+    seed=42
+)
+
+chain_cont_df <- as.data.frame(extract(fitMCK))
+ggplot(data=chain_cont_df, aes(chain_cont_df$tau)) + geom_histogram(breaks=seq(0, length(yM)))
+
+ggsave("diagrams/kr-cont-tau-hist.png")
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_center
+#+ATTR_LATEX: :height 0.85\textheight
+[[./diagrams/kr-cont-tau-hist.png]]
+#+END_center
+
+*** Where Precisely?
+
+#+BEGIN_SRC R :exports none :session R-session
+histData <- hist(extract(fitMCK)$tau,plot=FALSE,breaks=c(seq(0,length(yM)+1,1)))
+histData$counts
+
+min_indexes = which(diff(  sign(diff( c(0,histData$counts,0)))) == 2)
+max_indexes = which(diff(  sign(diff( c(0,histData$counts,0)))) == -2)
+modeData = data.frame(x=1:length(histData$counts),y=histData$counts)
+min_locs = modeData[min_indexes,]
+max_locs = modeData[max_indexes,]
+png("diagrams/kr-cont-modes.png")
+plot(modeData$y, type="l")
+points( min_locs, col="red", pch=19, cex=1  )
+points( max_locs, col="green", pch=19, cex=1  )
+dev.off()
+#+END_SRC
+
+#+RESULTS:
+: 2
+
+#+BEGIN_SRC R :exports results :session R-session
+  max_locs
+#+END_SRC
+
+#+RESULTS:
+| 125 |  447 |
+| 167 | 1051 |
+| 226 |  490 |
+| 230 |   88 |
+| 233 |  190 |
+
+*** Fitting the Model
+
+#+BEGIN_SRC R :exports results :session R-session
+  N <- length(yM)
+  M <- max_locs$x[2]
+
+  fite <- stan(file = 'LR.stan',
+               data = list(N = M, K = ncol(XM), y = yM[1:M], X = XM[1:M,]),
+               pars=c("beta", "sigma"),
+               chains=3,
+               cores=3,
+               iter=3000,
+               warmup=1000,
+               refresh=-1)
+
+  se <- extract(fite, pars = c("beta", "sigma"), permuted=TRUE)
+  estCovParamsE <- colMeans(se$beta)
+
+  fitl <- stan(file = 'LR.stan',
+               data = list(N = N-M, K = ncol(XM), y = yM[(M+1):N], X = XM[(M+1):N,]),
+               pars=c("beta", "sigma"),
+               chains=3,
+               cores=3,
+               iter=3000,
+               warmup=1000,
+               refresh=-1)
+
+  sl <- extract(fitl, pars = c("beta", "sigma"), permuted=TRUE)
+  estCovParamsL <- colMeans(sl$beta)
+
+  linRegPredsE <- data.matrix(XM) %*% estCovParamsE
+  linRegPredsL <- data.matrix(XM) %*% estCovParamsL
+
+  ggplot(tabM, aes(x=as.Date(tabM$krLabs), y=tabM$kr)) +
+      geom_line(aes(x = as.Date(tabM$krLabs), y = tabM$kr, col = "Actual")) +
+      geom_line(data=tabM[1:M,], aes(x = as.Date(tabM$krLabs[1:M]), y = linRegPredsE[(1:M),1], col = "Fit (Before FTA)")) +
+      geom_line(data=tabM[(M+1):N,], aes(x = as.Date(tabM$krLabs[(M+1):N]), y = linRegPredsL[((M+1):N),1], col = "Fit (After FTA)")) +
+      theme(legend.position="bottom") +
+      ggtitle("Goods Exports UK / South Korea (Monthly)") +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      xlab("Date") +
+      ylab("Value (£m)")
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_SRC R :exports results :session R-session
+  ggsave("diagrams/kr-fit.png")
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_center
+#+ATTR_LATEX: :height 0.85\textheight
+[[./diagrams/kr-fit.png]]
+#+END_center
+
 * Framework for Exotic Derivatives
 
-[[./diagrams/PyMC3.png]]
+** Section
+
+*** What is an Option
+
+An option or derivative is a contract giving the owner the right, but
+not the obligation, to buy (call) or sell (put) an underlying asset at
+a specified price (aka the strike), on or before a specified date.
+
+**** Mathematically
+$$
+c = (x - k)^+ \quad p = (k - x)^+
+$$
+
+**** In Haskell
+#+BEGIN_SRC haskell :export code :session hask
+call k x = max (x - k) 0
+put k x = max (k - x) 0
+#+END_SRC
+
+#+RESULTS:
+
+
+
+
