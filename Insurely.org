@@ -1,5 +1,5 @@
 #+OPTIONS: d:(not "BLOG")
-#+EXCLUDE_TAGS: presentation
+#+EXCLUDE_TAGS: blog
 
 #+BEGIN_SRC emacs-lisp :exports none
 ;; make org mode allow eval of some langs
@@ -50,7 +50,6 @@ Now worth nearly £11bn.
 
  * But these days, UK Office of National Statistics makes this easy to
    verify.
-
 
 * Change Point Detection
 ** Office for National Statistics (ONS)
@@ -169,7 +168,7 @@ ggsave("diagrams/monthly.png")
 
 *** Naive Stan I
 
-#+BEGIN_SRC :exports code
+#+BEGIN_SRC C++ :exports code
 data {
   int<lower=1> N;
   vector[N] x;
@@ -190,7 +189,7 @@ parameters {
 
 *** Naive Stan II
 
-#+BEGIN_SRC :exports code
+#+BEGIN_SRC C++ :exports code
 model {
   real mu;
   real gamma;
@@ -516,7 +515,7 @@ with chg_cont_model:
 
 *** Stan Second Attempt I
 
-#+BEGIN_SRC :exports code
+#+BEGIN_SRC C++ :exports code
 functions {
   vector interp(vector w, vector wc, vector a) {
     return w * a[1] + wc * a[2];
@@ -544,7 +543,7 @@ parameters {
 
 *** Stan Second Attempt II
 
-#+BEGIN_SRC :exports code
+#+BEGIN_SRC C++ :exports code
 
 model {
   vector[N] w = inv_logit(steps - 2 * tau);
@@ -717,7 +716,7 @@ dev.off()
 [[./diagrams/kr-fit.png]]
 #+END_center
 
-* Framework for Exotic Derivatives
+* Framework for Exotic Derivatives                             :presentation:
 
 ** Section
 
@@ -729,7 +728,11 @@ a specified price (aka the strike), on or before a specified date.
 
 **** Mathematically
 $$
-c = (x - k)^+ \quad p = (k - x)^+
+c = (x - k)^+
+$$
+
+$$
+p = (k - x)^+
 $$
 
 **** In Haskell
@@ -740,6 +743,166 @@ put k x = max (k - x) 0
 
 #+RESULTS:
 
+*** Call Chart
 
+#+BEGIN_SRC R :exports none :session R-II-session
+  library(ggplot2)
+
+  x <- seq(0.0, 5, 0.1)
+  fun.1 <- function(x){return(max(x - 2.5, 0))}
+  y <- unlist(lapply(x,fun.1))
+  df <- data.frame(x)
+  df$y <- y
+
+  ggplot(df, aes(x=x, y=y)) + geom_line() +
+  ggsave("diagrams/call.png")
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_center
+#+ATTR_LATEX: :height 0.85\textheight
+[[./diagrams/call.png]]
+#+END_center
+
+*** Put Chart
+
+#+BEGIN_SRC R :exports none :session R-II-session
+  x <- seq(0.0, 5, 0.1)
+  fun.2 <- function(x){return(max(2.5 - x, 0))}
+  y <- unlist(lapply(x,fun.2))
+  df <- data.frame(x)
+  df$y <- y
+
+  ggplot(df, aes(x=x, y=y)) + geom_line() +
+  ggsave("diagrams/put.png")
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_center
+#+ATTR_LATEX: :height 0.85\textheight
+[[./diagrams/put.png]]
+#+END_center
+
+
+*** Exotic
+
+ * Baskets
+   - an option on a portfolio of underlyings
+ * Compound options
+   - Options on other options, e.g. a call on a call
+ * Path dependent options
+   - barrier options–payout locked-in when underlying hits trigger
+   - lookback options–payout based on highest or lowest price during
+     the lookback period
+   - Asian options–payout derived from average value of underlying
+     over a specified window
+   - Autocallables–will early redeem if a particular barrier condition
+     is met
+   - knock-in put
+
+*** Trade Lifecycle
+
+ * Sales interact with the customers
+ * Structurers create new products, often on customer request
+ * Quants provide mathematical models and formal description of trades
+   (payout functions)
+ * Risk management validate and sign-off the payout functions
+ * Traders derive the final price, manage the trade over its lifetime
+   and analyse upcoming events
+ * Payments systems handle payment events throughout the lifetime of
+   the trade
+
+*** Functional Payout Framework
+
+ * \cite{Jones_2000} \citeauthor{Jones_2000} \citetitle{Jones_2000}
+ * Barclays 2006
+ * A standardized representation for describing payoffs
+ * A common suite of tools for trades which use this representation
+   - Pricing via C / Monte Carlo
+   - Mathematical / \LaTeX representation / Mathematica for risk management
+   - pricing and risk management
+   - barrier analysis
+   - payments and other lifecycle events
+
+*** Functional Payout Framework
+
+**** Specifying a Trade
+
+ * Trade type is Haskell script
+ * Trade parameters e.g. start date, strike, expiration date, barrier
+   levels, etc
+ * Fixings e.g. prices on Asian in
+
+**** Backends
+
+ * Pricing via MC or PDE
+ * \LaTeX
+ * Payments
+ * Barriers
+ * Mathematica
+
+*** Some Examples
+
+#+BEGIN_SRC haskell :export code :session haskII
+perf :: Date -> Date -> Asset -> Double
+perf t1 t2 asset =
+  observe asset t2 / observe asset t1 - 1
+
+bestOf :: (List Asset, Date, Date) -> Double
+bestOf (assets', startDate', endDate') =
+  foldl1 max perfs where
+    assets = name "Assets" assets'
+    startDate = name "Starting date" startDate'
+    endDate = name "End date" endDate'
+    perfs = map (perf startDate endDate) assets
+#+END_SRC
+
+*** Some Examples
+
+#+BEGIN_SRC haskell :export code :session haskII
+cliquet
+  ( name "Asset" -> asset
+  , name "Global floor" -> gf
+  , name "Global cap" -> gc
+  , name "Local floor" -> lf
+  , name "Local cap" -> lc
+  , name "Initial date" -> inDate
+  , name "Dates" -> dates
+  , name "Payment date" -> payDate
+  )
+  = max gf $ min gc $ sum perfs
+  where
+    cliquet d d' = (d', max lf $ min lc $ perf d d' asset)
+    (_, perfs) = mapAccumL cliquet inDate dates
+#+END_SRC
+
+*** The \LaTeX
+
+$$
+\mathrm{pay}\Bigg(t^{{PD}},\min\Bigg({GC},\max\Bigg({GF},
+\sum_{i=1}^{\mathrm{len}(t^D)}\min\Bigg({LC},\frac{S^{TOP}(t_i^D)}{S^{TOP}(t_{i-1}^D)}\Bigg)
+\Bigg) \Bigg)\Bigg)
+$$
+
+\begin{center}
+\small
+\begin{tabular}{ l l l }
+\bf{Variable} & \bf{Description} & \bf{Type} \\
+$TOP$ & Top-level input & Tuple of $(S^{TOP}, GF, GC, LF, LC, t^{ID}, t^D, t^{PD})$ \\
+\quad S^{TOP} & Asset & Asset \\
+\quad GC & Global floor & Double \\
+\quad GF & Global cap   & Double \\
+\quad LC & Local floor  & Double \\
+\quad LF & Local cap    & Double \\
+\quad t^{ID} & Initial date & Date \\
+\quad t^D & Dates & List of Date \\
+\quad t^{PD} & Payment date & Date
+\end{tabular}
+\end{center}
+
+# As far as I can tell we need this for reftex but not for actual
+# citation production as long as we have an ok .bbl file.
 
 
