@@ -24,7 +24,8 @@
 #+OPTIONS:   H:3
 #+LATEX_HEADER: \RequirePackage{fancyvrb}
 #+LATEX_HEADER: \DefineVerbatimEnvironment{verbatim}{Verbatim}{fontsize=\scriptsize}
-
+#+LATEX_HEADER: \usepackage[style=alphabetic]{biblatex}
+#+LATEX_HEADER: \bibliography{/Users/dom/Dropbox/Private/NumMethHaskell/DynSys}
 
 * Introduction
 
@@ -367,7 +368,7 @@ model and the data.
 :END:
 
 
-*** Diagnostic
+*** Diagnostics for Stan
 
 #+BEGIN_SRC R :exports none :session LR-session
 library(bayesplot)
@@ -594,7 +595,7 @@ ggsave("diagrams/cont-tau-hist.png")
  * But here are two more for free
  * Stan manual implies making time discrete and the marginalising it
    out
- * [[https://pymc-devs.github.io/pymc3/notebooks/getting_started.html#Case-study-2:-Coal-mining-disasters][PyMC3 documentation]] also implies making time discrete but using
+ * [[https://pymc-devs.github.io/pymc3/notebooks/getting_started.html\#Case-study-2:-Coal-mining-disasters][PyMC3 documentation]] also implies making time discrete but using
    Metropolis-Hastings for this variable rather than NUTS
 
 
@@ -716,9 +717,9 @@ dev.off()
 [[./diagrams/kr-fit.png]]
 #+END_center
 
-* Framework for Exotic Derivatives                             :presentation:
+* Framework for Exotic Derivatives
 
-** Section
+** Background
 
 *** What is an Option
 
@@ -789,18 +790,18 @@ put k x = max (k - x) 0
 *** Exotic
 
  * Baskets
-   - an option on a portfolio of underlyings
+   - An option on a portfolio of underlyings
  * Compound options
    - Options on other options, e.g. a call on a call
  * Path dependent options
-   - barrier options–payout locked-in when underlying hits trigger
-   - lookback options–payout based on highest or lowest price during
+   - Barrier options --- payout locked-in when underlying hits trigger
+   - Lookback options --- payout based on highest or lowest price during
      the lookback period
    - Asian options–payout derived from average value of underlying
      over a specified window
-   - Autocallables–will early redeem if a particular barrier condition
+   - Autocallables --- will redeem early if a particular barrier condition
      is met
-   - knock-in put
+   - Knock-in put
 
 *** Trade Lifecycle
 
@@ -814,6 +815,7 @@ put k x = max (k - x) 0
  * Payments systems handle payment events throughout the lifetime of
    the trade
 
+** The Framework
 *** Functional Payout Framework
 
  * \cite{Jones_2000} \citeauthor{Jones_2000} \citetitle{Jones_2000}
@@ -822,9 +824,9 @@ put k x = max (k - x) 0
  * A common suite of tools for trades which use this representation
    - Pricing via C / Monte Carlo
    - Mathematical / \LaTeX representation / Mathematica for risk management
-   - pricing and risk management
-   - barrier analysis
-   - payments and other lifecycle events
+   - Barrier analysis
+   - Payments and other lifecycle events
+   - Pricing via C / PDE
 
 *** Functional Payout Framework
 
@@ -880,29 +882,34 @@ cliquet
 
 *** The \LaTeX
 
+\begin{center}
+\small
 $$
 \mathrm{pay}\Bigg(t^{{PD}},\min\Bigg({GC},\max\Bigg({GF},
-\sum_{i=1}^{\mathrm{len}(t^D)}\min\Bigg({LC},\frac{S^{TOP}(t_i^D)}{S^{TOP}(t_{i-1}^D)}\Bigg)
+\sum_{i=1}^{\mathrm{len}(t^D)}\min\Bigg({LC},\frac{S^{TOP}(t_i^D)}{S^{TOP}(t_{i-1}^D)} - 1\Bigg)
 \Bigg) \Bigg)\Bigg)
 $$
+\end{center}
 
 \begin{center}
 \small
 \begin{tabular}{ l l l }
 \bf{Variable} & \bf{Description} & \bf{Type} \\
 $TOP$ & Top-level input & Tuple of $(S^{TOP}, GF, GC, LF, LC, t^{ID}, t^D, t^{PD})$ \\
-\quad S^{TOP} & Asset & Asset \\
-\quad GC & Global floor & Double \\
-\quad GF & Global cap   & Double \\
-\quad LC & Local floor  & Double \\
-\quad LF & Local cap    & Double \\
-\quad t^{ID} & Initial date & Date \\
-\quad t^D & Dates & List of Date \\
-\quad t^{PD} & Payment date & Date
+\quad $S^{TOP}$ & Asset & Asset \\
+\quad $GC$ & Global floor & Double \\
+\quad $GF$ & Global cap   & Double \\
+\quad $LC$ & Local floor  & Double \\
+\quad $LF$ & Local cap    & Double \\
+\quad $t^{ID}$ & Initial date & Date \\
+\quad $t^D$ & Dates & List of Date \\
+\quad $t^{PD}$ & Payment date & Date
 \end{tabular}
 \end{center}
 
 # As far as I can tell we need this for reftex but not for actual
 # citation production as long as we have an ok .bbl file.
-
-
+#
+# #+BIBLIOGRAPHY: /Users/dom/Dropbox/Private/NumMethHaskell/DynSys plain
+#
+# Also we might need to run biber Insurely
