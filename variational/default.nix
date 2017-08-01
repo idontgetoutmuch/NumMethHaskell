@@ -4,8 +4,9 @@ let
 
   inherit (nixpkgs) pkgs;
 
-  f = { mkDerivation, base, datasets, hmatrix, linear, random-fu
-      , stdenv
+  f = { mkDerivation, base, datasets, hmatrix, mtl, random-fu
+      , random-source, stdenv, typelits-witnesses, containers
+      , ghc-prim, vector
       }:
       mkDerivation {
         pname = "variational";
@@ -14,7 +15,8 @@ let
         isLibrary = false;
         isExecutable = true;
         executableHaskellDepends = [
-          base datasets hmatrix linear random-fu
+          base datasets hmatrix mtl random-fu random-source
+          typelits-witnesses containers ghc-prim vector
         ];
         license = stdenv.lib.licenses.bsd3;
       };
