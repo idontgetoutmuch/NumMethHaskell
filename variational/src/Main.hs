@@ -28,7 +28,6 @@ import OldFaithful
 import GHC.TypeLits
 import Data.Type.Equality
 import Data.Proxy
-import GHC.TypeLits.Compare
 
 import Data.Maybe (fromJust)
 
@@ -81,46 +80,46 @@ bars m = sum $ map (`atIndex` (0,1)) $ map (\n -> cmap (bigR `atIndex` (n, m) *)
 
 test2 = S.withMatrix bigR f
   where
-    f :: forall n' k . (KnownNat n', KnownNat k) => S.L n' k -> ((Matrix Double, Matrix Double, Vector Double, [Vector Double]), Matrix Double)
+    f :: forall n' k . (KnownNat n', KnownNat k) => S.L n' k -> ((Matrix Double, Matrix Double, [Vector Double]), Matrix Double)
     f r = ( S.withMatrix (fromLists [map eruptions oldFaithful, map waiting oldFaithful]) g
           , S.extract nK
           )
       where
-        g :: forall d n . (KnownNat d, KnownNat n) => S.L d n -> (Matrix Double, Matrix Double, Vector Double, [Vector Double])
+        g :: forall d n . (KnownNat d, KnownNat n) => S.L d n -> (Matrix Double, Matrix Double, [Vector Double])
         g x = case sameNat (Proxy :: Proxy n') (Proxy :: Proxy n) of
                 Nothing -> error "Incompatible matrices"
-                Just Refl -> (S.extract xbar, S.extract ((S.tr x) - xbar1), S.extract xxbar1, map S.extract xxbars)
+                Just Refl -> (S.extract xbars, S.extract ((S.tr x) - (mkXbarss (xxbars!!0))), map S.extract xxbars)
                                where
-                                 r1 :: S.L d n
-                                 r1 = repmat' (Proxy :: Proxy d) $
-                                      S.row $ getFirst $ S.tr r
-                                 rs :: [S.L d n]
+                                 rs :: [S.L d n] -- k
                                  rs = map (repmat' (Proxy :: Proxy d)) $
                                        map (S.row . fromJust . S.create) $
                                        toRows $ S.extract $ S.tr r
-                                 xxbar1 :: S.R d
-                                 xxbar1 = fromJust $ S.create $ fromList $
-                                          map (foldVector (+) 0) $
-                                          toRows $ S.extract r1 .* S.extract x
-                                 xxbar :: S.L d n -> S.L d n -> S.R d
-                                 xxbar rr1 xx = fromJust $ S.create $ fromList $
-                                               map (foldVector (+) 0) $
-                                               toRows $ S.extract rr1 .* S.extract xx
-                                 xxbars :: [S.R d]
-                                 xxbars = zipWith xxbar rs (repeat x)
-                                 xbar :: S.L k d
-                                 xbar = (S.tr r) S.<> (S.tr x)
-                                 xbar1 :: S.L n d
-                                 xbar1 = fromJust $
-                                         S.create $
-                                         fromRows $
-                                         replicate l (S.extract $ getFirst xbar)
+                                 xxbars :: [S.R d] -- k
+                                 xxbars = map sumRows $ rs .* (repeat x)
+                                 xbars :: S.L k d
+                                 xbars = (S.tr r) S.<> (S.tr x)
+                                 mkXbarss :: S.R d -> S.L n d
+                                 mkXbarss u = fromJust $
+                                              S.create $
+                                              fromRows $
+                                              replicate l (S.extract u)
+                                 foo :: [S.L n d] -- k
+                                 foo = map mkXbarss xxbars
+                                 bar :: [S.L n d] -- k
+                                 bar = map (S.tr x -) foo
+                                 baz :: [[S.R d]] -- k x n?
+                                 baz = map (map (fromJust . S.create) . toRows . S.extract) bar
+                                 urk :: [[S.L d d]] -- k x n?
+                                 urk = map (map (\x -> (S.col x) S.<> (S.row x))) baz
 
         l = fst $ S.size r
         nK :: S.L 1 k
         nK = S.row (S.vector $ take l ones) S.<> r
 
-infixl 7 .*
+sumRows ::  forall d n . (KnownNat d, KnownNat n) => S.L d n -> S.R d
+sumRows = fromJust . S.create . fromList .
+          map (foldVector (+) 0) .
+          toRows . S.extract
 
 repmat' :: forall m n . (KnownNat m, KnownNat n) => Proxy n -> S.L 1 m -> S.L n m
 repmat' p x = fromJust $ S.create z
@@ -130,30 +129,32 @@ repmat' p x = fromJust $ S.create z
     z = foldr (===) y (replicate (n - 1) y)
     n = fromIntegral $ natVal p
 
-class PointWise a where
+infixl 7 .*
+
+class Pointwise a where
   (.*) :: a -> a -> a
 
-instance (Num a, Storable a) => PointWise (Vector a) where
+instance (Num a, Storable a) => Pointwise (Vector a) where
   (.*) = zipVectorWith (*)
 
-instance (Num a, Storable a, Element a) => PointWise (Matrix a) where
+instance (Num a, Storable a, Element a) => Pointwise (Matrix a) where
   (.*) = liftMatrix2 (.*)
 
-getFirst :: forall m n . (KnownNat m, KnownNat n) => S.L m n -> S.R n
-getFirst x = case (Proxy :: Proxy 1) %<=? (Proxy :: Proxy m) of
-          LE  Refl -> S.unrow $ fst $ S.splitRows x
-          NLE _    -> 0
+instance (KnownNat n, KnownNat m) => Pointwise (S.L m n) where
+  x .* y = fromJust $ S.create $ (S.extract x) .* (S.extract y)
+
+instance Pointwise a => Pointwise [a] where
+  (.*) = zipWith (.*)
 
 main :: IO ()
 main = do
-  let ((xbar, _ms1, xx1, xxs), nK) = test2
+  let ((xbar, ms1, xxs), nK) = test2
       vk = cmap (v0 +) nK
       _betak = cmap (beta0 +) nK
   putStrLn $ show $ size nK
-  putStrLn $ show (xbar `atIndex` (0,0))
-  putStrLn $ show xx1
-  putStrLn $ show xxs
+  putStrLn $ show ms1
   putStrLn $ show nK
   putStrLn $ show vk
   putStrLn $ show xbar
+  putStrLn $ show xxs
   putStrLn "Hello, Haskell!"
