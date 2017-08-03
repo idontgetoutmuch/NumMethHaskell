@@ -31,6 +31,7 @@ import Data.Proxy
 
 import Data.Maybe (fromJust)
 
+import qualified Naperian as N
 
 -- hyperparams:
 alpha0, beta0, v0 :: Double
@@ -96,6 +97,10 @@ test2 = S.withMatrix bigR f
                                        toRows $ S.extract $ S.tr r
                                  xxbars :: [S.R d] -- k
                                  xxbars = map sumRows $ rs .* (repeat x)
+                                 xxbars' :: [S.R d] -- k
+                                 xxbars' = zipWith (\n u -> S.dvmap (/n) u)
+                                                   (toList (S.extract $ S.unrow nK))
+                                                   (map sumRows $ rs .* (repeat x))
                                  xbars :: S.L k d
                                  xbars = (S.tr r) S.<> (S.tr x)
                                  mkXbarss :: S.R d -> S.L n d
@@ -109,12 +114,18 @@ test2 = S.withMatrix bigR f
                                  bar = map (S.tr x -) foo
                                  baz :: [[S.R d]] -- k x n?
                                  baz = map (map (fromJust . S.create) . toRows . S.extract) bar
-                                 urk :: [[S.L d d]] -- k x n?
-                                 urk = map (map (\x -> (S.col x) S.<> (S.row x))) baz
+                                 urk :: [S.L d d] -- k?
+                                 urk = map sum $ map (map (\x -> (S.col x) S.<> (S.row x))) baz
 
         l = fst $ S.size r
         nK :: S.L 1 k
         nK = S.row (S.vector $ take l ones) S.<> r
+
+bigRH :: N.Matrix 272 6 Double
+bigRH = (fromJust . N.fromList) $
+        map (fromJust . N.fromList) $
+        map toList $
+        toRows bigR
 
 sumRows ::  forall d n . (KnownNat d, KnownNat n) => S.L d n -> S.R d
 sumRows = fromJust . S.create . fromList .
