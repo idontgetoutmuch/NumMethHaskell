@@ -91,6 +91,8 @@ test2 = S.withMatrix bigR f
                 Nothing -> error "Incompatible matrices"
                 Just Refl -> (S.extract xbars, S.extract ((S.tr x) - (mkXbarss (xxbars!!0))), map S.extract xxbars)
                                where
+                                 eek :: S.L d n
+                                 eek = x
                                  rs :: [S.L d n] -- k
                                  rs = map (repmat' (Proxy :: Proxy d)) $
                                        map (S.row . fromJust . S.create) $
@@ -116,29 +118,36 @@ test2 = S.withMatrix bigR f
                                  baz = map (map (fromJust . S.create) . toRows . S.extract) bar
                                  urk :: [S.L d d] -- k?
                                  urk = map sum $ map (map (\x -> (S.col x) S.<> (S.row x))) baz
-
         l = fst $ S.size r
         nK :: S.L 1 k
         nK = S.row (S.vector $ take l ones) S.<> r
 
-bigRH :: N.Matrix 272 6 Double
-bigRH = (fromJust . N.fromList) $
-        map (fromJust . N.fromList) $
-        map toList $
-        toRows bigR
-
-sumRows ::  forall d n . (KnownNat d, KnownNat n) => S.L d n -> S.R d
-sumRows = fromJust . S.create . fromList .
-          map (foldVector (+) 0) .
-          toRows . S.extract
-
-repmat' :: forall m n . (KnownNat m, KnownNat n) => Proxy n -> S.L 1 m -> S.L n m
-repmat' p x = fromJust $ S.create z
+test3 :: ([Vector Double], Matrix Double)
+test3 = S.withMatrix bigR f
   where
-    y = S.extract x
-    z :: Matrix Double
-    z = foldr (===) y (replicate (n - 1) y)
-    n = fromIntegral $ natVal p
+    f :: forall n' k . (KnownNat n', KnownNat k) =>
+                       S.L n' k -> ([Vector Double], Matrix Double)
+    f r = ( S.withMatrix (fromLists [map eruptions oldFaithful, map waiting oldFaithful]) g
+          , S.extract nK
+          )
+      where
+        g :: forall d n . (KnownNat d, KnownNat n) =>
+                          S.L d n -> [Vector Double]
+        g x = case sameNat (Proxy :: Proxy n') (Proxy :: Proxy n) of
+                Nothing -> error "Incompatible matrices"
+                Just Refl -> map S.extract xbars
+                               where
+                                 rs :: [S.L d n] -- k
+                                 rs = map (repmat' (Proxy :: Proxy d)) $
+                                       map (S.row . fromJust . S.create) $
+                                       toRows $ S.extract $ S.tr r
+                                 xbars :: [S.R d] -- k
+                                 xbars = zipWith (\n u -> S.dvmap (/n) u)
+                                                 (toList (S.extract $ S.unrow nK))
+                                                 (map sumRows $ rs .* (repeat x))
+        l = fst $ S.size r
+        nK :: S.L 1 k
+        nK = S.row (S.vector $ take l ones) S.<> r
 
 infixl 7 .*
 
@@ -156,6 +165,85 @@ instance (KnownNat n, KnownNat m) => Pointwise (S.L m n) where
 
 instance Pointwise a => Pointwise [a] where
   (.*) = zipWith (.*)
+
+sumRows ::  forall d n . (KnownNat d, KnownNat n) => S.L d n -> S.R d
+sumRows = fromJust . S.create . fromList .
+          map (foldVector (+) 0) .
+          toRows . S.extract
+
+repmat' :: forall m n . (KnownNat m, KnownNat n) => Proxy n -> S.L 1 m -> S.L n m
+repmat' p x = fromJust $ S.create z
+  where
+    y = S.extract x
+    z :: Matrix Double
+    z = foldr (===) y (replicate (n - 1) y)
+    n = fromIntegral $ natVal p
+
+bigRH :: N.Matrix 272 6 Double
+bigRH = (fromJust . N.fromList) $
+        map (fromJust . N.fromList) $
+        map toList $
+        toRows bigR
+
+bigRH' :: N.Hyper '[N.Vector 6, N.Vector 272] Double
+bigRH' = N.Prism (N.Prism (N.Scalar bigRH))
+
+bigXH :: N.Matrix 272 2 Double
+bigXH = (fromJust . N.fromList) $
+        map (fromJust . N.fromList) $
+        map toList $
+        toRows bigX
+
+nKK :: N.Hyper '[N.Vector 6] Double
+nKK = N.reduceBy ((+),0) $ N.transposeH (N.Prism (N.Prism (N.Scalar bigRH)))
+
+nK :: N.Hyper '[N.Vector 6] Double
+nK = N.foldrH (+) 0 $
+     N.transposeH (N.Prism (N.Prism (N.Scalar bigRH)))
+
+xbar0 :: N.Hyper '[N.Vector 2] Double
+xbar0 = N.foldrH (+) 0 $
+        N.binary (*) (N.Prism $ N.Scalar $ N.lookup (N.transpose bigRH) (N.Fin 0))
+                     (N.Prism (N.Prism (N.Scalar (N.transpose bigXH))))
+
+bigXHs :: N.Vector 2 (N.Vector 6 (N.Vector 272 Double))
+bigXHs = N.transpose $ N.replicate (N.transpose bigXH)
+
+altBigRH :: N.Vector 6 (N.Vector 272 Double)
+altBigRH = N.transpose bigRH
+
+xbars :: N.Hyper '[N.Vector 6, N.Vector 2] Double
+xbars = N.foldrH (+) 0 $
+        N.binary (*) (N.Prism (N.Prism (N.Scalar altBigRH)))
+                     (N.Prism $ N.Prism $ N.Prism $ N.Scalar bigXHs)
+
+xbars' :: N.Hyper '[N.Vector 6, N.Vector 2] Double
+xbars' = N.binary (/) xbars nK
+
+diff1 :: N.Hyper '[N.Vector 272, N.Vector 6, N.Vector 2] Double
+diff1 = case xbars' of
+          N.Prism (N.Prism (N.Scalar xbarU)) ->
+            N.binary (-) b a
+            where
+              a :: N.Hyper '[N.Vector 272, N.Vector 6, N.Vector 2] Double
+              a = N.Prism (N.Prism (N.Prism (N.Scalar bigXHs)))
+              b :: N.Hyper '[N.Vector 272, N.Vector 6, N.Vector 2] Double
+              b = N.transposeH $ N.transposeH' $
+                  N.Prism (N.Prism (N.Prism (N.Scalar (N.replicate xbarU))))
+
+diff2 :: N.Hyper '[N.Vector 272, N.Vector 6, N.Vector 2] Double
+diff2 = N.binary (*) a diff1
+  where
+    a :: N.Hyper '[N.Vector 272, N.Vector 6, N.Vector 2] Double
+    a = N.transposeH $ N.Prism (N.Prism (N.Prism (N.Scalar (N.replicate bigRH))))
+
+bigS :: N.Hyper '[N.Vector 6] (N.Vector 2 (N.Vector 2 Double))
+bigS = N.binary N.matrix a b
+  where
+    a :: N.Hyper '[N.Vector 6] (N.Vector 2 (N.Vector 272 Double))
+    a =  N.crystal $ N.crystal $ N.transposeH' diff1
+    b :: N.Hyper '[N.Vector 6] (N.Vector 272 (N.Vector 2 Double))
+    b = N.unary N.transpose $ N.crystal $ N.crystal $ N.transposeH' diff2
 
 main :: IO ()
 main = do
