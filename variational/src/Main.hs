@@ -213,69 +213,67 @@ altBigRH :: N.Vector 6 (N.Vector 272 Double)
 altBigRH = N.transpose bigRH
 
 g :: forall d k n . (KnownNat d, KnownNat k, KnownNat n) =>
-     N.Matrix n k Double ->
-     N.Vector d (N.Vector k (N.Vector n Double)) ->
+     N.Hyper '[N.Vector k, N.Vector n] Double ->
+     N.Hyper '[N.Vector n, N.Vector k, N.Vector d] Double ->
      ( N.Hyper '[N.Vector k] Double
      , N.Hyper '[N.Vector k, N.Vector d] Double
-     , N.Hyper '[N.Vector k] (N.Vector d (N.Vector d Double))
+     , N.Hyper '[N.Vector k, N.Vector d, N.Vector d] Double
      )
 g biggR biggXs = (nnK, xxbars, biggS)
         where
-          nnK = N.foldrH (+) 0 $
-               N.transposeH (N.Prism (N.Prism (N.Scalar biggR)))
 
-          xsums = N.foldrH (+) 0 $
-                  N.binary (*) (N.Prism (N.Prism (N.Scalar $ N.transpose biggR)))
-                               (N.Prism $ N.Prism $ N.Prism $ N.Scalar biggXs)
-          xxbars = N.binary (/) xsums nnK
+          nnK = sums $ N.transposeH biggR
 
-          difff1 = N.binary (-) a b
-          a = N.Prism (N.Prism (N.Prism (N.Scalar biggXs)))
+          xxbars = xsums ./. nnK
+          xsums = sums $ (N.transposeH biggR) .*. biggXs
+
+          difff1 = biggXs .-. b
           b :: N.Hyper '[N.Vector n, N.Vector k, N.Vector d] Double
-          b = N.transposeH $ N.transposeH' $
-              N.Prism $ N.Prism $ N.Prism $ N.Scalar $
-              N.replicate $ N.point $ N.crystal $ N.crystal $ xxbars
+          b = N.transposeH $ N.transposeH' $ focus N.replicate xxbars
 
-          difff2 = N.binary (*) c difff1
+          difff2 = c .*. difff1
           c :: N.Hyper '[N.Vector n, N.Vector k, N.Vector d] Double
-          c = N.transposeH $ N.Prism (N.Prism (N.Prism (N.Scalar (N.replicate biggR))))
+          c = N.transposeH $ focus N.replicate biggR
 
-          biggS = N.binary N.matrix d e
-          d =  N.crystal $ N.crystal $ N.transposeH' difff1
-          e = N.unary N.transpose $ N.crystal $ N.crystal $ N.transposeH' difff2
+          biggS = biggS' ./. nnK
+          biggS' = N.transposeH $ N.transposeH' $
+                   N.Prism $ N.Prism $
+                   N.binary N.matrix d2 d1'
+          d1' = N.unary N.transpose $ N.crystal $ N.crystal $ N.transposeH' difff1
+          d2 = N.crystal $ N.crystal $ N.transposeH' difff2
 
-xbars :: N.Hyper '[N.Vector 6, N.Vector 2] Double
-xbars = N.foldrH (+) 0 $
-        N.binary (*) (N.Prism (N.Prism (N.Scalar altBigRH)))
-                     (N.Prism $ N.Prism $ N.Prism $ N.Scalar bigXHs)
+          focus h = N.Prism . N.Prism . N.Prism . N.Scalar .
+                    h . N.point . N.crystal . N.crystal
 
-xbars' :: N.Hyper '[N.Vector 6, N.Vector 2] Double
-xbars' = N.binary (/) xbars nK
+          sums = N.foldrH (+) 0
 
-diff1 :: N.Hyper '[N.Vector 272, N.Vector 6, N.Vector 2] Double
-diff1 = case xbars' of
-          N.Prism (N.Prism (N.Scalar xbarU)) ->
-            N.binary (-) b a
-            where
-              a :: N.Hyper '[N.Vector 272, N.Vector 6, N.Vector 2] Double
-              a = N.Prism (N.Prism (N.Prism (N.Scalar bigXHs)))
-              b :: N.Hyper '[N.Vector 272, N.Vector 6, N.Vector 2] Double
-              b = N.transposeH $ N.transposeH' $
-                  N.Prism (N.Prism (N.Prism (N.Scalar (N.replicate xbarU))))
+infixl 6 .+.
 
-diff2 :: N.Hyper '[N.Vector 272, N.Vector 6, N.Vector 2] Double
-diff2 = N.binary (*) a diff1
-  where
-    a :: N.Hyper '[N.Vector 272, N.Vector 6, N.Vector 2] Double
-    a = N.transposeH $ N.Prism (N.Prism (N.Prism (N.Scalar (N.replicate bigRH))))
+(.+.) :: (Num c, N.Alignable gs (N.Max fs gs),
+          N.Alignable fs (N.Max fs gs), N.Compatible fs gs) =>
+         N.Hyper fs c -> N.Hyper gs c -> N.Hyper (N.Max fs gs) c
+(.+.) = N.binary (+)
 
-bigS :: N.Hyper '[N.Vector 6] (N.Vector 2 (N.Vector 2 Double))
-bigS = N.binary N.matrix a b
-  where
-    a :: N.Hyper '[N.Vector 6] (N.Vector 2 (N.Vector 272 Double))
-    a =  N.crystal $ N.crystal $ N.transposeH' diff1
-    b :: N.Hyper '[N.Vector 6] (N.Vector 272 (N.Vector 2 Double))
-    b = N.unary N.transpose $ N.crystal $ N.crystal $ N.transposeH' diff2
+infixl 6 .-.
+
+(.-.) :: (Num c, N.Alignable gs (N.Max fs gs),
+          N.Alignable fs (N.Max fs gs), N.Compatible fs gs) =>
+         N.Hyper fs c -> N.Hyper gs c -> N.Hyper (N.Max fs gs) c
+(.-.) = N.binary (-)
+
+infixl 7 ./.
+
+(./.) :: (Fractional c, N.Alignable gs (N.Max fs gs),
+          N.Alignable fs (N.Max fs gs), N.Compatible fs gs) =>
+         N.Hyper fs c -> N.Hyper gs c -> N.Hyper (N.Max fs gs) c
+(./.) = N.binary (/)
+
+infixl 7 .*.
+
+(.*.) :: (Fractional c, N.Alignable gs (N.Max fs gs),
+          N.Alignable fs (N.Max fs gs), N.Compatible fs gs) =>
+         N.Hyper fs c -> N.Hyper gs c -> N.Hyper (N.Max fs gs) c
+(.*.) = N.binary (*)
 
 main :: IO ()
 main = do
@@ -283,9 +281,12 @@ main = do
       vk = cmap (v0 +) nnnK
       _betak = cmap (beta0 +) nnnK
   putStrLn $ show $ size nnnK
-  putStrLn $ show ms1
+  -- putStrLn $ show ms1
   putStrLn $ show nnnK
-  putStrLn $ show vk
+  -- putStrLn $ show vk
   putStrLn $ show xbar
-  putStrLn $ show xxs
+  -- putStrLn $ show xxs
+  let (n,m,s) = g bigRH' (N.Prism $ N.Prism $ N.Prism $ N.Scalar bigXHs)
+  putStrLn $ show n
+  putStrLn $ show m
   putStrLn "Hello, Haskell!"
