@@ -29,7 +29,7 @@ import GHC.TypeLits
 import Data.Type.Equality
 import Data.Proxy
 
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, fromMaybe)
 
 import qualified Naperian as N
 
@@ -186,6 +186,51 @@ bigRH = (fromJust . N.fromList) $
 
 bigRH' :: N.Hyper '[N.Vector 6, N.Vector 272] Double
 bigRH' = N.Prism (N.Prism (N.Scalar bigRH))
+
+withMatrix
+    :: forall a z
+     . [[a]]
+    -> (forall k n . (KnownNat k, KnownNat n) => N.Hyper '[N.Vector k, N.Vector n] a -> z)
+    -> z
+withMatrix a f =
+    case someNatVal $ fromIntegral $ length a of
+       Nothing -> error "static/dynamic mismatch"
+       Just (SomeNat (_ :: Proxy n)) ->
+           case someNatVal $ fromIntegral $ (length . head) a of
+               Nothing -> error "static/dynamic mismatch"
+               Just (SomeNat (_ :: Proxy k)) ->
+                 f b
+                 where
+                    b :: N.Hyper '[N.Vector k, N.Vector n] a
+                    b = N.Prism $ N.Prism $ N.Scalar $
+                        (fromJust' . N.fromList) $ map (fromJust' . N.fromList) a
+                    fromJust' = fromMaybe (error "static/dynamic mismatch")
+
+sumMatrix :: (Num a, KnownNat k, KnownNat n) => N.Hyper '[N.Vector k, N.Vector n] a -> a
+sumMatrix = N.point . N.foldrH (+) 0 . N.foldrH (+) 0
+
+-- withCuboid
+--     :: forall a z
+--      . [[[a]]]
+--     -> (forall k n . (KnownNat d, KnownNat k, KnownNat n) =>
+--         N.Hyper '[N.Vector n, N.Vector k, N.Vector d] a -> z)
+--     -> z
+-- withCuboid a f =
+--     case someNatVal $ fromIntegral $ length a of
+--        Nothing -> error "static/dynamic mismatch"
+--        Just (SomeNat (_ :: Proxy k)) ->
+--            case someNatVal $ fromIntegral $ (length . head) a of
+--                Nothing -> error "static/dynamic mismatch"
+--                Just (SomeNat (_ :: Proxy n)) ->
+--                  case someNatVal $ fromIntegral $ (length . head . head) a of
+--                    Nothing -> error "static/dynamic mismatch"
+--                    Just (SomeNat (_ :: Proxy d)) ->
+--                      f b
+--                      where
+--                        b :: N.Hyper '[N.Vector k, N.Vector n] a
+--                        b = N.Prism $ N.Prism $ N.Scalar $
+--                            (fromJust . N.fromList) $
+--                            map (fromJust . N.fromList) a
 
 bigXH :: N.Matrix 272 2 Double
 bigXH = (fromJust . N.fromList) $
