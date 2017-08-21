@@ -225,6 +225,17 @@ instance KnownNat n => Dimension (Vector n) where size = length
 inner :: (Num a, Dimension f) => f a -> f a -> a
 inner xs ys = sum (liftA2 (*) xs ys)
 
+tensor11 :: (Num a, Dimension f, Dimension g) => f a -> g a -> f (g a)
+tensor11 xs ys = liftA2 (liftA2 (*)) (fmap pure xs) (pure ys)
+
+trace11 :: forall f n a b . (Log f ~ Finite n, Dimension f, Num a) => f (f a) -> a
+trace11 xx = sum $ map (\i -> uncurry (lookup . lookup xx) (Fin i, Fin i))
+                       [0 .. (size xx) - 1]
+
+tensor22 :: (Num a, Dimension e, Dimension f, Dimension g, Dimension h) =>
+       f (e a) -> g (h a) -> f (e (g (h a)))
+tensor22 xs ys = fmap transpose $ liftA2 (liftA2 (tensor11)) (fmap pure xs) (pure ys)
+
 matrix :: ( Num a
           , Dimension f
           , Dimension g
