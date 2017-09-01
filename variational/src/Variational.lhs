@@ -9,6 +9,9 @@ bibliography: ../../DynSys.bib
 Introduction
 ============
 
+Although we are following @bishop2006pattern, there are some more details here
+
+https://en.wikipedia.org/wiki/Variational_Bayesian_methods
 
 Summary
 -------
@@ -32,7 +35,8 @@ We follow
 
 > {-# LANGUAGE Rank2Types          #-}
 
-> {-# LANGUAGE OverloadedLists       #-}
+> {-# LANGUAGE OverloadedLists     #-}
+> {-# LANGUAGE PostfixOperators    #-}
 
 > module Main where
 
@@ -56,6 +60,9 @@ We follow
 > import qualified Naperian as N
 > import qualified Data.Foldable as F
 
+> import qualified Data.ByteString.Lazy as BL
+> import Data.Csv
+> import qualified Data.Vector as V
 
 > -- hyperparams:
 > alpha0, beta0, v0 :: Double
@@ -83,14 +90,14 @@ We follow
 > ones :: Num a => [a]
 > ones = 1 : ones
 
-> preZ :: RVar [[Double]]
-> preZ = replicateM bigN $ dirichlet (take bigK ones)
+> preZ :: [[Double]]
+> preZ = evalState (sample $ replicateM bigN $ dirichlet (take bigK ones)) (pureMT 42)
 
-> bigZ :: RVar (Matrix Double)
-> bigZ = liftM (bigN >< bigK) (liftM concat preZ)
+> bigZ :: Matrix Double
+> bigZ = (bigN >< bigK) (concat preZ)
 
 > bigR :: Matrix Double
-> bigR = evalState (sample bigZ) (pureMT 42)
+> bigR = bigZ
 
 > xd :: Matrix Double
 > xd = konst 0.0 (bigK, bigD)
@@ -284,40 +291,40 @@ We follow
 > altBigRH :: N.Vector 6 (N.Vector 272 Double)
 > altBigRH = N.transpose bigRH
 
-> g :: forall d k n . (KnownNat d, KnownNat k, KnownNat n) =>
->      N.Hyper '[N.Vector k, N.Vector n] Double ->
->      N.Hyper '[N.Vector n, N.Vector k, N.Vector d] Double ->
->      ( N.Hyper '[N.Vector k] Double
->      , N.Hyper '[N.Vector k, N.Vector d] Double
->      , N.Hyper '[N.Vector k, N.Vector d, N.Vector d] Double
->      )
-> g biggR biggXs = (nnK, xxbars, biggS)
->         where
+> calcXdS :: forall d k n . (KnownNat d, KnownNat k, KnownNat n) =>
+>            N.Hyper '[N.Vector k, N.Vector n] Double ->
+>            N.Hyper '[N.Vector n, N.Vector k, N.Vector d] Double ->
+>            ( N.Hyper '[N.Vector k] Double
+>            , N.Hyper '[N.Vector k, N.Vector d] Double
+>            , N.Hyper '[N.Vector k, N.Vector d, N.Vector d] Double
+>            )
+> calcXdS biggR biggXs = (nnK, xxbars, biggS)
+>   where
 >
->           nnK = sums $ N.transposeH biggR
+>     nnK = sums $ N.transposeH biggR
 >
->           xxbars = xsums ./. nnK
->           xsums = sums $ (N.transposeH biggR) .*. biggXs
+>     xxbars = xsums ./. nnK
+>     xsums = sums $ (N.transposeH biggR) .*. biggXs
 >
->           difff1 = biggXs .-. b
->           b :: N.Hyper '[N.Vector n, N.Vector k, N.Vector d] Double
->           b = N.transposeH $ N.transposeH' $ focus N.replicate xxbars
+>     difff1 = biggXs .-. b
+>     b :: N.Hyper '[N.Vector n, N.Vector k, N.Vector d] Double
+>     b = N.transposeH $ N.transposeH' $ focus N.replicate xxbars
 >
->           difff2 = c .*. difff1
->           c :: N.Hyper '[N.Vector n, N.Vector k, N.Vector d] Double
->           c = N.transposeH $ focus N.replicate biggR
+>     difff2 = c .*. difff1
+>     c :: N.Hyper '[N.Vector n, N.Vector k, N.Vector d] Double
+>     c = N.transposeH $ focus N.replicate biggR
 >
->           biggS = biggS' ./. nnK
->           biggS' = N.transposeH $ N.transposeH' $
->                    N.Prism $ N.Prism $
->                    N.binary N.matrix d2 d1'
->           d1' = N.unary N.transpose $ N.crystal $ N.crystal $ N.transposeH' difff1
->           d2 = N.crystal $ N.crystal $ N.transposeH' difff2
+>     biggS = biggS' ./. nnK
+>     biggS' = N.transposeH $ N.transposeH' $
+>              N.Prism $ N.Prism $
+>              N.binary N.matrix d2 d1'
+>     d1' = N.unary N.transpose $ N.crystal $ N.crystal $ N.transposeH' difff1
+>     d2 = N.crystal $ N.crystal $ N.transposeH' difff2
 >
->           focus h = N.Prism . N.Prism . N.Prism . N.Scalar .
->                     h . N.point . N.crystal . N.crystal
+>     focus h = N.Prism . N.Prism . N.Prism . N.Scalar .
+>               h . N.point . N.crystal . N.crystal
 >
->           sums = N.foldrH (+) 0
+>     sums = N.foldrH (+) 0
 
 > infixl 6 .+.
 
@@ -353,11 +360,20 @@ We follow
 > priorParBeta = pure 1.0
 > priorParNu = pure 20.0
 
+The matlab crib has this as *PriorPar.mu = zeros(dim,1);* and the
+python crib has it as *m0 = zeros(XDim) #prior mean*.
 
-The matlab crib has this as *PriorPar.mu = zeros(dim,1);*
+> priorParMu :: forall d . (KnownNat d) => N.Hyper '[N.Vector d] Double
+> priorParMu = N.Prism $ N.Scalar $ fromJust . N.fromList $ take d zeros
+>   where
+>     d = fromInteger $ natVal (Proxy :: Proxy d)
+>     zeros = 0 : zeros
 
-> priorParMu :: forall d . N.Hyper '[N.Vector d] Double
-> priorParMu = undefined
+The matlab crib has this as *PriorPar.W = 200*eye(dim);*.
+
+
+> priorParW :: forall d . N.Hyper '[N.Vector d, N.Vector d] Double
+> priorParW = undefined
 
 > newMu :: forall d k . (KnownNat d, KnownNat k) =>
 >          N.Hyper '[N.Vector k] Double ->
@@ -366,15 +382,34 @@ The matlab crib has this as *PriorPar.mu = zeros(dim,1);*
 >          N.Hyper '[N.Vector k] Double ->
 >          N.Hyper '[N.Vector k, N.Vector d] Double ->
 >          N.Hyper '[N.Vector k, N.Vector d, N.Vector d] Double ->
->          N.Hyper '[N.Vector d, N.Vector k] Double
-> newMu betaK beta0 m0 bigN xbar bigS = m
+>          N.Hyper '[N.Vector k, N.Vector d] Double
+> newMu beta beta0 m0 bigN xbar bigS = m
 >   where
 
 $\mathbf{m}_k = \frac{1}{\beta_k}(\beta_0 \mathbf{m}_0 + N_k \bar{\mathbf{x}}_k)$ (10.61)
 
->     m = (beta0 .*. m0 .+. N.transposeH (bigN .*. xbar)) ./. beta0
+>     m = N.transposeH (beta0 .*. m0 .+. N.transposeH (bigN .*. xbar)) ./. beta
+>     mult1 :: N.Hyper '[N.Vector k] Double
 >     mult1 = beta0 .*. bigN ./. (beta0 .+. bigN)
+>     diff3 :: N.Hyper '[N.Vector d, N.Vector k] Double
 >     diff3 = N.transposeH xbar .-. m0
+>     foo :: N.Hyper '[N.Vector k, N.Vector d, N.Vector d] Double
+>     foo = bigN .*. bigS
+>     urk :: N.Hyper '[N.Vector d, N.Vector d] Double
+>     urk = N.matrixH (N.transposeH diff3) diff3
+
+Suppose we have $k$ $d$-dimensional vectors and we wish to take the
+outer product of each vector with itself.
+
+$$
+\begin{bmatrix}
+x_{11} & \ldots & x_{1d} \\
+\ldots & \ldots & \ldots \\
+x_{k1} & \ldots & x_{kd} \\
+\end{bmatrix}
+$$
+
+Possibly http://www.le.ac.uk/economics/research/RePEc/lec/leecon/dp14-02.pdf
 
 > bigS :: N.Hyper '[N.Vector 6] (N.Matrix 2 2 Double)
 > bigS = undefined
@@ -402,7 +437,7 @@ $\mathbf{m}_k = \frac{1}{\beta_k}(\beta_0 \mathbf{m}_0 + N_k \bar{\mathbf{x}}_k)
 >   -- putStrLn $ show vk
 >   putStrLn $ show xbar
 >   -- putStrLn $ show xxs
->   let (bigN,xbar,s) = g bigRH' (N.Prism $ N.Prism $ N.Prism $ N.Scalar bigXHs)
+>   let (bigN,xbar,s) = calcXdS bigRH' (N.Prism $ N.Prism $ N.Prism $ N.Scalar bigXHs)
 
 $\alpha_k = \alpha_0 + N_k$ (10.58)
 
@@ -416,11 +451,52 @@ $\nu_k = \nu_0 + N_k$ (10.63)
 
 >   let nu = priorParNu .+. bigN
 
+>   putStrLn "Napierian"
 >   putStrLn $ show bigN
 >   putStrLn $ show xbar
 >   putStrLn $ show $ priorParAlpha .+. bigN
+>   BL.writeFile "bigR.csv" (encode preZ)
+>   let bar :: N.Hyper '[N.Vector 6, N.Vector 2] Double
+>       bar = newMu beta priorParBeta priorParMu bigN xbar s
+>       baz :: N.Vector 2 (N.Vector 6 Double)
+>       baz = N.point $ N.crystal $ N.crystal bar
+>       urk = F.toList $ fmap F.toList baz
+>       eek :: BL.ByteString
+>       eek = encode urk
+>   BL.writeFile "means.csv" eek
+>   error $ show eek
 >   putStrLn "Hello, Haskell!"
 >   -- putStrLn $ show $ fromNtoS ([[3,0],[0,3]] :: N.Matrix 2 2 Double)
->   putStrLn $ show $ (S.matrix [ 3.0, 0.0, 0.0, 3.0 ] :: S.L 2 2)
->   putStrLn $ show $ S.inv $ (S.matrix [ 3.0, 0.0, 0.0, 3.0 ] :: S.L 2 2)
->   -- putStrLn $ show $ S.inv $ fromNtoS ([[3,0],[0,3]] :: N.Matrix 2 2 Double)
+>   --- putStrLn $ show $ (S.matrix [ 3.0, 0.0, 0.0, 3.0 ] :: S.L 2 2)
+>   -- putStrLn $ show $ S.inv $ (S.matrix [ 3.0, 0.0, 0.0, 3.0 ] :: S.L 2 2)
+>   --- putStrLn $ show $ S.inv $ fromNtoS ([[3,0],[0,3]] :: N.Matrix 2 2 Double)
+>   preZ <- BL.readFile "src/faithZ.txt"
+>   let recsZ :: Either String (V.Vector [String])
+>       recsZ = decode HasHeader preZ
+>   case recsZ of
+>     Left err -> putStrLn err
+>     Right bigZ -> do
+>        let foo :: V.Vector [Double]
+>            foo = fmap (fmap read) $ fmap tail bigZ
+>        putStrLn $ show $ V.length foo
+>        putStrLn $ show $ fmap length foo
+
+Other Stuff
+===========
+
+Variational Auto Encoders notes and clippings.
+
+This is the best so far
+
+https://stats.stackexchange.com/questions/199605/how-does-the-reparameterization-trick-for-vaes-work-and-why-is-it-important
+
+The downloaded
+http://nbviewer.jupyter.org/github/gokererdogan/Notebooks/blob/master/Reparameterization%20Trick.ipynb
+is in Pfizer/vae_trick.
+
+Googling "vae reparameterization trick" gives lots of interesting
+links which I have yet to follow.
+
+Possibly of some use
+
+https://jaan.io/what-is-variational-autoencoder-vae-tutorial/

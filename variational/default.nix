@@ -6,7 +6,7 @@ let
 
   f = { mkDerivation, base, datasets, hmatrix, mtl, random-fu
       , random-source, stdenv, typelits-witnesses, containers
-      , ghc-prim, vector
+      , ghc-prim, vector, cassava, bytestring
       }:
       mkDerivation {
         pname = "variational";
@@ -16,7 +16,7 @@ let
         isExecutable = true;
         executableHaskellDepends = [
           base datasets hmatrix mtl random-fu random-source
-          typelits-witnesses containers ghc-prim vector
+          typelits-witnesses containers ghc-prim vector cassava bytestring
         ];
         license = stdenv.lib.licenses.bsd3;
       };

@@ -228,9 +228,11 @@ inner xs ys = sum (liftA2 (*) xs ys)
 tensor11 :: (Num a, Dimension f, Dimension g) => f a -> g a -> f (g a)
 tensor11 xs ys = liftA2 (liftA2 (*)) (fmap pure xs) (pure ys)
 
-trace11 :: forall f n a b . (Log f ~ Finite n, Dimension f, Num a) => f (f a) -> a
-trace11 xx = sum $ map (\i -> uncurry (lookup . lookup xx) (Fin i, Fin i))
-                       [0 .. (size xx) - 1]
+trace11 :: (Naperian f, Num a, Foldable f) => f (f a) -> a
+trace11 = sum . diags
+
+diags :: Naperian f => f (f b) -> f b
+diags xx = fmap (\i -> uncurry (lookup . lookup xx) (i, i)) positions
 
 tensor22 :: (Num a, Dimension e, Dimension f, Dimension g, Dimension h) =>
        f (e a) -> g (h a) -> f (e (g (h a)))
@@ -461,6 +463,8 @@ example4 = matrixH v1 v2 where
   v2 = Prism (Prism (Scalar y)) :: Hyper '[Vector 2, Vector 3] Int
 
 type Cuboid n m p v = Vector n (Vector m (Vector p v))
+
+uu = [ [ 1, 2, 3 ] ] :: Matrix 1 3 Int
 
 xx = [ [ 1, 2, 3 ]
     , [ 4, 5, 6 ]
