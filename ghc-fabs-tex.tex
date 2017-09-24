@@ -1,0 +1,396 @@
+\documentclass[presentation]{beamer}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{fixltx2e}
+\usepackage{graphicx}
+\usepackage{grffile}
+\usepackage{longtable}
+\usepackage{wrapfig}
+\usepackage{rotating}
+\usepackage[normalem]{ulem}
+\usepackage{amsmath}
+\usepackage{textcomp}
+\usepackage{amssymb}
+\usepackage{capt-of}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{color}
+\usepackage{verse}
+\RequirePackage{fancyvrb}
+\DefineVerbatimEnvironment{verbatim}{Verbatim}{fontsize=\scriptsize}
+\usepackage[style=alphabetic]{biblatex}
+\usetheme{Frankfurt}
+\author{Dominic Steinitz}
+\date{Monday 17 July 17}
+\title{Bayesian Change Point Detection}
+\hypersetup{
+ pdfauthor={Dominic Steinitz},
+ pdftitle={Bayesian Change Point Detection},
+ pdfkeywords={},
+ pdfsubject={Bayesian change point analysis of UK / South Korea trade statistics},
+ pdflang={English}}
+
+\lstnewenvironment{haskelL}[1][]
+      {\lstset{language=haskell}\lstset{escapeinside={(*@}{@*)},
+          basicstyle=\ttfamily\scriptsize,
+          keywordstyle=\color{blue}\ttfamily,
+          stringstyle=\color{red}\ttfamily,
+          commentstyle=\color{brown}\ttfamily,
+          language=haskell, label= , caption= ,
+          captionpos=b, numbers=none}}
+      {}
+
+\lstnewenvironment{ASM}[1][]
+{\lstset{language={[x86masm]Assembler}}\lstset{
+      basicstyle=\ttfamily\small,
+      keywordstyle=\color{brown}\ttfamily,
+      stringstyle=\color{red}\ttfamily,
+      commentstyle=\color{blue}\ttfamily,
+      label= ,caption= ,
+      captionpos=b,
+      numbers=none}}
+  {}
+
+\begin{document}
+
+\maketitle
+\begin{frame}{Outline}
+\tableofcontents
+\end{frame}
+
+
+\section{Introduction}
+
+\begin{frame}{April 2013}
+
+  \begin{itemize}
+    \item
+        It would be fantastic if someone could
+        investigate Levent's suggestion "Of course,
+        implementations can take advantage of the
+        underlying CPU's native floating-point
+        abs/sign functions if available as well,
+        avoiding explicit tests at the Haskell code;
+        based on the underlying platform"
+      \item
+        Otherwise we'll just end up adding an extra test
+        and everyone's code will run a little bit slower.
+      \item Colleague points out in December 2016
+        that this really slows their code down.
+    \end{itemize}
+
+\end{frame}
+
+\begin{frame}{A Little Learning}
+
+  \poemtitle{An Essay on Criticism}
+  \settowidth{\versewidth}{Fired at first sight with what the Muse imparts,}
+  \begin{verse}[\versewidth]
+    A little learning is a dangerous thing; \\
+    Drink deep or taste not the Pierian spring. \\
+    Fired at first sight with what the Muse imparts, \\
+    In fearless youth we tempt the heights of Arts;
+  \end{verse}
+
+  \begin{itemize}
+    \item
+      Fearlessly assumed x87 FPU is being used for
+      floating-point operations
+    \item All that needs to be done is emit an
+      fabs instruction.
+    \end{itemize}
+
+\end{frame}
+
+\begin{frame}{Resources}
+  \begin{itemize}
+    \item
+      \url{https://ghc.haskell.org/trac/ghc/wiki/Newcomers} e.g. "fast rebuilding"
+    \item
+      folks on \#ghc are super helpful
+    \item
+      Create a ticket and get helpful comments.
+      \url{https://ghc.haskell.org/trac/ghc/ticket/13212}
+    \end{itemize}
+\end{frame}
+
+\section{Floating Point}
+\begin{frame}{Take a Step Back}
+  \begin{center}
+    \includegraphics[width=0.95\textwidth]{./diagrams/1280px-Float_example.svg.png}
+  \end{center}
+\end{frame}
+
+\section{Code}
+\label{sec:orgheadline9}
+\subsection{2.1}
+\label{sec:orgheadline8}
+
+\begin{frame}[fragile,label={sec:orgheadline7}]{\texttt{libraries/base/GHC/Float.hs}}
+
+\begin{haskelL}
+  abs x | x == 0 = 0 -- handles (-0.0)
+        | x > 0 = x
+        | otherwise = negateFloat x
+\end{haskelL}
+\end{frame}
+
+\begin{frame}[fragile]{Generated X86}
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{brown}\ttfamily,
+  stringstyle=\color{red}\ttfamily,
+  commentstyle=\color{blue}\ttfamily,
+  language={[x86masm]Assembler},
+  label= ,caption= ,
+  captionpos=b,
+  numbers=left}
+
+\begin{lstlisting}
+        ;; Make xmm1 contain 0
+        xorps %xmm1,%xmm1
+        ;; Compare
+        ucomiss %xmm1,%xmm0
+        ;; Jump if unordered i.e. if either operand
+        ;; is a NaN
+        jp _c41v
+        ;; Jump if equal - the first branch
+        je _c41w
+\end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]{Generated X86}
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{brown}\ttfamily,
+  stringstyle=\color{red}\ttfamily,
+  commentstyle=\color{blue}\ttfamily,
+  language={[x86masm]Assembler},
+  label= ,caption= ,
+  captionpos=b,
+  numbers=left,
+  firstnumber=last}
+
+\begin{lstlisting}
+_c41v:
+        ;; We get here if either any operand is a
+        ;; NaN or if x is different from 0
+        xorps %xmm1,%xmm1
+        ucomiss %xmm1,%xmm0
+        ;; Jump if above - the second branch
+        ja _c41t
+\end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]{Generated X86}
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{brown}\ttfamily,
+  stringstyle=\color{red}\ttfamily,
+  commentstyle=\color{blue}\ttfamily,
+  language={[x86masm]Assembler},
+  label= ,caption= ,
+  captionpos=b,
+  numbers=left,
+  firstnumber=last}
+
+\begin{lstlisting}
+_c41q:
+        ;; We get here if x is less than 0 or ;;
+	;; possibly if any operand is a NaN - the
+	;; third branch
+        leaq GHC.Types.F#_con_info(%rip),%rax
+        movq %rax,-8(%r12)
+        ;; This contains 0x80000000 so the top bit
+	;; gets flipped
+        movss _n41H(%rip),%xmm1
+        xorps %xmm1,%xmm0
+        movss %xmm0,(%r12)
+        leaq -7(%r12),%rbx
+        addq $-16,%rbp
+        jmp *(%rbp)
+\end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]{Generated X86}
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{brown}\ttfamily,
+  stringstyle=\color{red}\ttfamily,
+  commentstyle=\color{blue}\ttfamily,
+  language={[x86masm]Assembler},
+  label= ,caption= ,
+  captionpos=b,
+  numbers=left,
+  firstnumber=last}
+
+\begin{lstlisting}
+_c41w:
+        addq $-16,%r12
+        leaq GHC.Float.rationalToFloat4_closure(%rip),%rbx
+        addq $-16,%rbp
+        jmp *(%rbx)
+_c41t:
+\end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]{rwbarton comments}
+Yes, this would be worthwhile and not difficult. See
+
+\begin{itemize}
+\item
+  \url{https://.../wiki/Commentary/PrimOps\#AddinganewPrimOp}
+  for the steps involved
+\item
+  \url{https://phabricator.haskell.org/D1334} for a recent
+  example.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]{Follow the Commentary: Amend \texttt{primops.txt.pp}}
+
+  Add
+  \begin{haskelL}
+    primop FloatFabsOp "fabsFloat#" Monadic
+           Float# -> Float#
+  \end{haskelL}
+
+  Why \texttt{Monadic}?
+
+\end{frame}
+
+\begin{frame}[fragile]{Follow the Example}
+
+  If you see sucha \texttt{PrimOp} then in \texttt{compiler/codeGen/StgCmmPrim.hs}: Stg to C--
+
+  \begin{haskelL}
+    callishPrimOpSupported :: DynFlags -> PrimOp ->
+                              Either CallishMachOp GenericOp
+    callishPrimOpSupported dflags op =
+      case op of
+      ...
+        FloatFabsOp
+          | (ncg && x86ish)
+              || llvm      -> Left MO_F32_Fabs
+          | otherwise      -> Right $ genericFabsOp W32
+      ...
+  \end{haskelL}
+\end{frame}
+
+\begin{frame}[fragile]{Follow the Example: Amend the AST}
+
+  \begin{itemize}
+    \item \texttt{MO\_F32\_Fabs} doesn't exist!
+    \item It's similar to the x86 sqrt instruction so let's place them near each other.
+    \item In \texttt{compiler/cmm/CmmMachOp.hs}
+      \begin{haskelL}
+        data CallishMachOp
+        = MO_F64_Pwr
+        | MO_F64_Sin
+        ...
+        | MO_F64_Exp
+        | (*@\textcolor{red}{MO\_F64\_Fabs}@*)
+        | MO_F64_Sqrt
+        ...
+      \end{haskelL}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{What If We See \texttt{MO\_F32\_Fabs}?}
+  In \texttt{compiler/llvmGen/LlvmCodeGen/CodeGen.hs} generate the llvm instruction
+  \begin{haskelL}
+    MO_F32_Fabs -> fsLit "llvm.fabs.f32"
+  \end{haskelL}
+
+\end{frame}
+
+\begin{frame}[fragile]{What If We See \texttt{MO\_F32\_Fabs}?}
+  In \texttt{compiler/nativeGen/X86/CodeGen.hs}, it's slightly more complicated
+  \begin{haskelL}
+  genCCall
+    :: DynFlags
+    -> Bool                     -- 32 bit platform?
+    -> ForeignTarget            -- function to call
+    -> [CmmFormal]        -- where to put the result
+    -> [CmmActual]        -- arguments (of mixed type)
+    -> NatM InstrBlock
+    ...
+    (PrimTarget op, [r])
+      | sse2 -> case op of
+          MO_F32_Fabs -> case args of
+            [x] -> sse2FabsCode W32 x
+            _ -> panic "... for fabs"
+    ...
+  \end{haskelL}
+  otherwise generate a ``call'' (in assembly language) to
+  \texttt{fabs} (not efficient).
+\end{frame}
+
+
+\begin{frame}[fragile]{What If We See \texttt{MO\_F32\_Fabs}?}
+  \texttt{sse2NegCode :: Width -> CmmExpr -> NatM Register} does almost what we want so let's modify it
+  \begin{haskelL}
+    sse2FabsCode :: Width -> CmmExpr -> NatM InstrBlock
+    sse2FabsCode w x = do
+      let fmt = floatFormat w
+    x_code <- getAnyReg x
+    let
+      const | FF32 <- fmt = CmmInt 0x7fffffff W32
+            | otherwise   = CmmInt 0x7fffffffffffffff W64
+    Amode amode amode_code <- memConstant (widthInBytes w) const
+    tmp <- getNewRegNat fmt
+    let
+      code dst = x_code dst <> amode_code <> fromList [
+          MOV fmt (OpAddr amode) (OpReg tmp),
+          AND fmt (OpReg tmp) (OpReg dst)
+          ]
+
+    return $ code (getRegisterReg platform True (CmmLocal r))
+  \end{haskelL}
+\end{frame}
+
+\begin{frame}[fragile]{What If We See \texttt{MO\_F32\_Fabs}?}
+
+  \begin{ASM}
+    movss _n2ca(%rip),%xmm1
+    andps %xmm1,%xmm0
+  \end{ASM}
+\end{frame}
+
+% sse2NegCode :: Width -> CmmExpr -> NatM Register
+% sse2NegCode w x = do
+%   let fmt = floatFormat w
+%   x_code <- getAnyReg x
+%   -- This is how gcc does it, so it can't be that bad:
+%   let
+%     const = case fmt of
+%       FF32 -> CmmInt 0x80000000 W32
+%       FF64 -> CmmInt 0x8000000000000000 W64
+%   Amode amode amode_code <- memConstant (widthInBytes w) const
+%   tmp <- getNewRegNat fmt
+%   let
+%     code dst = x_code dst `appOL` amode_code `appOL` toOL [
+%         MOV fmt (OpAddr amode) (OpReg tmp),
+%         XOR fmt (OpReg tmp) (OpReg dst)
+%         ]
+%   return (Any fmt code)
+% \end{haskelL}
+
+% -- Compute an expression into *any* register, adding the appropriate
+% -- move instruction if necessary.
+% getAnyReg :: CmmExpr -> NatM (Reg -> InstrBlock)
+% getAnyReg expr = do
+%   r <- getRegister expr
+%   anyReg r
+
+% What does C do?
+% Amend the AST
+% Generate the correct ASM
+% Generate the correct llvm (easy)
+% Generate C--
+% Someone else has fixed Solaris(?)
+
+% https://stackoverflow.com/questions/44630015/how-would-fabsdouble-be-implemented-on-x86-is-it-an-expensive-operation
+
+\end{document}
