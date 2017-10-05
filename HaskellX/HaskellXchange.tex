@@ -1,0 +1,202 @@
+\documentclass[presentation]{beamer}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{fixltx2e}
+\usepackage{graphicx}
+\usepackage{grffile}
+\usepackage{longtable}
+\usepackage{wrapfig}
+\usepackage{rotating}
+\usepackage[normalem]{ulem}
+\usepackage{amsmath}
+\usepackage{textcomp}
+\usepackage{amssymb}
+\usepackage{capt-of}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{color}
+\usepackage{verse}
+\RequirePackage{fancyvrb}
+\DefineVerbatimEnvironment{verbatim}{Verbatim}{fontsize=\scriptsize}
+\usepackage[style=alphabetic]{biblatex}
+\usetheme{Frankfurt}
+\author{Dominic Steinitz}
+\date{Wednesday 27 September 17}
+\title{Hacking on GHC: A Worm's Eye View}
+\hypersetup{
+ pdfauthor={Dominic Steinitz},
+ pdfkeywords={},
+ pdflang={English}}
+
+\usepackage{dramatist}
+
+\begin{document}
+
+\maketitle
+\begin{frame}{Outline}
+\tableofcontents
+\end{frame}
+
+\section{Introduction}
+
+\begin{frame}{Apollo 8 launched on December 21, 1968}
+
+\StageDir{03:17:45:17 (Dec. 25, 1968, 6:36 a.m. UTC)}
+
+\begin{drama}
+  \Character{Jim Lovell (Commander Module Pilot)}{jim}
+  \Character{Ken Mattingly (CAPCOM)}{ken}
+
+  \jimspeaks: Roger. Do you wish me to reinitialize the W-matrix at this time?
+\end{drama}
+
+\StageDir{03:17:45:26}
+
+\begin{drama}
+  \Character{Jim Lovell (Commander Module Pilot)}{jim}
+  \Character{Ken Mattingly (CAPCOM)}{ken}
+
+  \kenspeaks: Affirmative, Apollo 8
+\end{drama}
+
+\section{Introducing the Reverend Bayes}
+\end{frame}
+
+\begin{frame}{Game}
+
+  \begin{block}{Game}
+    \begin{itemize}
+    \item I select a number at random from a normal distribution.
+    \item At time 1 I give you some information: the number with added noise.
+    \item At time 2 I give you more information: the same number but with different added noise.
+    \item And so on $\ldots$
+    \end{itemize}
+  \end{block}
+
+\end{frame}
+
+\begin{frame}{Bayes' Theorem}
+
+  $$
+  \mathbb{P}(A \,|\, B) \triangleq \frac{\mathbb{P}(A \cap B)}{\mathbb{P}(B)}
+  $$
+
+  Also
+
+  $$
+  \mathbb{P}(B \,|\, A) \triangleq \frac{\mathbb{P}(A \cap B)}{\mathbb{P}(A)}
+  $$
+
+  Thus
+
+  $$
+  \mathbb{P}(A \,|\, B) \propto {\mathbb{P}(B \,|\, A)}{\mathbb{P}(A)}
+  $$
+
+\end{frame}
+
+\begin{frame}{Take a Step Back}
+  \begin{center}
+    \includegraphics[width=0.95\textwidth]{./diagrams/prior.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}{Take a Step Back}
+  \begin{center}
+    \includegraphics[width=0.95\textwidth]{./diagrams/post1.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}{Take a Step Back}
+  \begin{center}
+    \includegraphics[width=0.95\textwidth]{./diagrams/postN.png}
+  \end{center}
+\end{frame}
+
+\section{Introducing the Reverend Brown}
+
+\begin{frame}{Robert Brown (1827)}
+
+  \begin{itemize}
+  \item You wish to emulate the famous botanist but with a difference.
+  \item You have a camera which gives approximate co-ordinates of the
+    pollen particle on the slide.
+  \item You have a motor which can drive the slide in horizontal and
+    vertical planes.
+  \item How to track the camera to minimize the particle's distance
+    from the centre of the microscope's field of vision?
+  \end{itemize}
+
+\end{frame}
+
+\begin{frame}{Mathematical Model}
+  We can model the pollen's motion as
+
+  \begin{block}{Equations of Motion}
+    $$
+    \begin{aligned}
+      \frac{\mathrm{d}^2 x_1}{\mathrm{d}t^2} &= \omega_1(t) \\
+      \frac{\mathrm{d}^2 x_2}{\mathrm{d}t^2} &= \omega_2(t)
+    \end{aligned}
+    $$
+  \end{block}
+
+  Writing $x_3 = \mathrm{d}x_1 / \mathrm{d}t$ and
+  $x_4 = \mathrm{d}x_2 / \mathrm{d}t$ this becomes
+
+  \begin{block}{Matrix Form}
+  $$
+  \frac{\mathrm{d}}{\mathrm{d}t}\begin{bmatrix}x_1 \\ x_2 \\ x_3 \\ x_4\end{bmatrix} =
+  \begin{bmatrix}
+    0 & 0 & 1 & 0 \\
+    0 & 0 & 0 & 1 \\
+    0 & 0 & 0 & 0 \\
+    0 & 0 & 0 & 0
+  \end{bmatrix}
+  \begin{bmatrix}x_1 \\ x_2 \\ x_3 \\ x_4\end{bmatrix} +
+  \begin{bmatrix}
+    0 & 0 \\
+    0 & 0 \\
+    1 & 0 \\
+    0 & 1
+  \end{bmatrix}
+  \begin{bmatrix}\omega_1 \\ \omega_2\end{bmatrix}
+  $$
+  \end{block}
+
+\end{frame}
+
+\begin{frame}{}
+
+  \begin{block}{Discretizing at $0, \Delta t, 2\Delta t, \ldots $}
+    $$
+    \begin{bmatrix}x^{(k)}_1 \\ x^{(k)}_2 \\ x^{(k)}_3 \\ x^{(k)}_4\end{bmatrix} =
+    \begin{bmatrix}
+      1 & 0 & \Delta t & 0 \\
+      0 & 1 & 0        & \Delta t \\
+      0 & 0 & 1        & 0 \\
+      0 & 0 & 0        & 1
+    \end{bmatrix}
+    \begin{bmatrix}x^{(k-1)}_1 \\ x^{(k-1)}_2 \\ x^{(k-1)}_3 \\ x^{(k-1)}_4\end{bmatrix} +
+    \mathbf{q}_k
+    $$
+  \end{block}
+
+  \begin{block}{In vector notation}
+    $$
+    \mathbf{x}_k = \mathbf{A} \mathbf{x}_{k_1} + \mathbf{q}_k
+    $$
+  \end{block}
+
+\end{frame}
+
+\section{Bayes for Pollen}
+
+\begin{frame}{}
+
+  A similar but lengthier derivation gives us the following algorithm
+
+\end{frame}
+
+\end{document}
+
