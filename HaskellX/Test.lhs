@@ -6,8 +6,10 @@
 %format muPrior         = "\boldsymbol{\mu_0}"
 %format sigmaPrior      = "\boldsymbol{\Sigma_0}"
 %format bigH            = "\boldsymbol{H}"
+%format bigHH           = "\boldsymbol{H}"
 %format bigSigmaY       = "\boldsymbol{\Sigma}^{(y)}"
 %format bigA            = "\boldsymbol{A}"
+%format bigAA           = "\boldsymbol{A}"
 %format bigSigmaX       = "\boldsymbol{\Sigma}^{(x)}"
 %format xHat            = "\hat{\boldsymbol{x}}"
 %format xHatFlat        = "\hat{\boldsymbol{x}}^\flat"
@@ -19,7 +21,21 @@
 %format bigK            = "\boldsymbol{K}"
 %format vv              = "\hat{\boldsymbol{v}}"
 %format yy              = "\hat{\boldsymbol{y}}"
-
+%format S.<>            = "\mathbin{\texttt{<>}}"
+%format S.#>            = "\mathbin{\texttt{\#>}}"
+%format <>              = "\mathbin{\texttt{<>}}"
+%format #>              = "\mathbin{\texttt{\#>}}"
+%format mu0             = "\mu_0"
+%format sigma0          = "\sigma_0"
+%format x0              = "x_0"
+%format sigma           = "\sigma"
+%format xPrev           = "\boldsymbol{x}^\flat"
+%format bigQ            = "\boldsymbol{Q}"
+%format xNew            = "\boldsymbol{x}"
+%format yNew            = "\boldsymbol{y}"
+%format bigR            = "\boldsymbol{R}"
+%format m0              = "\boldsymbol{m}_0"
+%format bigSigma0       = "\boldsymbol{\Sigma}_0"
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -120,7 +136,7 @@
 \end{frame}
 
 
-\begin{frame}{Prior and Secret}
+\begin{frame}{Prior}
 
 %if style == newcode
 \begin{code}
@@ -133,6 +149,32 @@
 
 {-# OPTIONS_GHC -Wall                   #-}
 {-# OPTIONS_GHC -fno-warn-type-defaults #-}
+
+module Test ( kalmans'''
+            , kalmans''
+            , kalmans'
+            , kalmans
+            , m0X1
+            , m1X1
+            , m2X1
+            , muX1
+            , marginal1X
+            , marginal1Y
+            , varX1
+            , m0X0
+            , m1X0
+            , m2X0
+            , muX0
+            , varX0
+            , x0
+            , sigma
+            , likelihood
+            , ds
+            , mu0
+            , sigma0
+            , hist
+            , priors
+            ) where
 
 import Control.Monad
 import Data.Random.Source.PureMT
@@ -154,6 +196,12 @@ import qualified Numeric.LinearAlgebra.Static as S
 import qualified Data.Random.Distribution.MultivariateNormal as G
 
 import           GHC.TypeLits
+
+import Diagrams.Prelude hiding ( normal, sample, (<>), inv )
+import Diagrams.Backend.Rasterific
+import Plots hiding ( numBins, pdf )
+import qualified Plots as P
+
 
 numBins :: Int
 numBins = 100
@@ -197,16 +245,22 @@ priors :: Histogram V.Vector BinD Double
 priors = hist $ runSampler (normal mu0 sigma0) 2 100000
 \end{code}
 
+\end{frame}
+
+\begin{frame}{Prior}
+  \begin{center}
+    \includegraphics[height=0.80\textheight]{./diagrams/prior.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}{Secret, Model and Data}
+
 I sample my secret value
 
 \begin{code}
 x0 :: Double
 x0 = 1.00
 \end{code}
-
-\end{frame}
-
-\begin{frame}{Model and Data}
 
 I tell you the model aka the likelihood $\mathbb{P}(A \,\vert\, B)$
 
@@ -235,10 +289,9 @@ ds = runSampler (normal x0 sigma) 2 10
 Now you can use Bayes' to determine my secret value
 
 \begin{code}
-posteriorize :: (BinValue bin ~ Double, Bin bin) =>
-                H.Histogram bin Double ->
-                Double ->
-                H.Histogram bin Double
+posteriorize ::  H.Histogram BinD Double ->
+                 Double ->
+                 H.Histogram BinD Double
 posteriorize q d = H.bmap (\v p -> p * likelihood v d) q
 
 qs :: [H.Histogram BinD Double]
@@ -250,12 +303,6 @@ ss = map H.sum qs
 ns :: [H.Histogram BinD Double]
 ns = zipWith (\s q -> H.map (/ s) q) ss qs
 \end{code}
-\end{frame}
-
-\begin{frame}{Prior}
-  \begin{center}
-    \includegraphics[height=0.80\textheight]{./diagrams/prior.png}
-  \end{center}
 \end{frame}
 
 \begin{frame}{After 1 Observation}
@@ -335,13 +382,28 @@ ns = zipWith (\s q -> H.map (/ s) q) ss qs
       0 & 0 & 0        & 1
     \end{bmatrix}
     \begin{bmatrix}x^{(k-1)}_1 \\ x^{(k-1)}_2 \\ x^{(k-1)}_3 \\ x^{(k-1)}_4\end{bmatrix} +
-    \mathbf{q}_k
+    \boldsymbol{Q}_k
+    $$
+  \end{block}
+
+  \begin{block}{Can only observe position}
+    $$
+    \begin{bmatrix}y^{(k)}_1 \\ ^{(k)}_2\end{bmatrix} =
+    \begin{bmatrix}
+      1 & 0 & 0 & 0\\
+      0 & 1 & 0 & 0
+    \end{bmatrix}
+    \begin{bmatrix}x^{(k-1)}_1 \\ x^{(k-1)}_2 \\ x^{(k-1)}_3 \\ x^{(k-1)}_4\end{bmatrix} +
+    \boldsymbol{R}_k
     $$
   \end{block}
 
   \begin{block}{In vector notation}
     $$
-    \mathbf{x}_k = \mathbf{A} \mathbf{x}_{k_1} + \mathbf{q}_k
+    \begin{aligned}
+    \boldsymbol{x}_k &= \boldsymbol{A} \boldsymbol{x}_{k-1} + \boldsymbol{Q}_k \\
+    \boldsymbol{y}_k &= \boldsymbol{H} \boldsymbol{x}_{k}   + \boldsymbol{R}_k
+    \end{aligned}
     $$
   \end{block}
 
@@ -353,60 +415,30 @@ ns = zipWith (\s q -> H.map (/ s) q) ss qs
 
 %if style == newcode
 \begin{code}
-deltaT, sigma1, sigma2, qc1, qc2 :: Double
+deltaT, sigma1, qc1 :: Double
 deltaT = 0.1
 sigma1 = 1/2
-sigma2 = 1/2
 qc1 = 1
-qc2 = 1
 
 bigAl :: [Double]
-bigAl = [1, 0 , deltaT,      0,
-         0, 1,       0, deltaT,
-         0, 0,       1,      0,
-         0, 0,       0,      1]
+bigAl = [1,  deltaT,
+         0,       1]
 
-bigAl2 :: [Double]
-bigAl2 = [1,  deltaT,
-          0,       1]
-
-bigA :: M.Matrix Double
-bigA = (4 M.>< 4) bigAl
-
-bigA2 :: M.Matrix Double
-bigA2 = (2 M.>< 2) bigAl2
-
-bigQl :: [Double]
-bigQl = [qc1 * deltaT^3 / 3,                  0, qc1 * deltaT^2 / 2,                  0,
-                          0, qc2 * deltaT^3 / 3,                  0, qc2 * deltaT^2 / 2,
-         qc1 * deltaT^2 / 2,                  0,       qc1 * deltaT,                  0,
-                          0, qc2 * deltaT^2 / 2,                  0,       qc2 * deltaT]
+bigAA :: M.Matrix Double
+bigAA = (2 M.>< 2) bigAl
 
 bigQl2 :: [Double]
 bigQl2 = [qc1 * deltaT^3 / 3, qc1 * deltaT^2 / 2,
           qc1 * deltaT^2 / 2,       qc1 * deltaT]
 
 bigQ :: M.Herm Double
-bigQ = M.trustSym $ (4 M.>< 4) bigQl
+bigQ = M.trustSym $ (2 M.>< 2) bigQl2
 
-bigQ2 :: M.Herm Double
-bigQ2 = M.trustSym $ (2 M.>< 2) bigQl2
-
-newState :: MonadRandom m => M.Vector Double -> m (M.Vector Double)
-newState xPrev = sample $ rvar (G.Normal (bigA M.#> xPrev) bigQ)
-
-bigH2 :: M.Matrix Double
-bigH2 = (1 M.>< 2) [1, 0]
+bigHH :: M.Matrix Double
+bigHH = (1 M.>< 2) [1, 0]
 
 bigR :: M.Herm Double
-bigR = M.trustSym $ (2 M.>< 2) [sigma1^2,        0,
-                                       0, sigma2^2]
-
-bigR2 :: M.Herm Double
-bigR2 = M.trustSym $ (1 M.>< 1) [sigma1^2]
-
-m02 :: M.Vector Double
-m02 = M.fromList [0, 1]
+bigR = M.trustSym $ (1 M.>< 1) [sigma1^2]
 \end{code}
 %endif
 
@@ -419,25 +451,22 @@ First I sample my secret value, in this case a path followed by the
 pollen particle. I simultaneously create a sample of noisy data.
 
 \begin{code}
-pollenSample :: MonadRandom m =>
-             M.Vector Double ->
-             m (Maybe ((M.Vector Double, M.Vector Double),
-                M.Vector Double))
-pollenSample xPrev = do
-  xNew <- sample $ rvar (G.Normal (bigA2 M.#> xPrev) bigQ2)
-  yNew <- sample $ rvar (G.Normal (bigH2 M.#> xNew) bigR2)
-  return $ Just ((xNew, yNew), xNew)
-
 pollenSamples :: [(M.Vector Double, M.Vector Double)]
-pollenSamples = evalState (ML.unfoldrM pollenSample m02)
-                          (pureMT 17)
+pollenSamples = evalState  (ML.unfoldrM pollenSample m0)
+                           (pureMT 17)
+  where
+    pollenSample xPrev = do
+      xNew <- sample $ rvar (G.Normal (bigAA #> xPrev) bigQ)
+      yNew <- sample $ rvar (G.Normal (bigHH #> xNew) bigR)
+      return $ Just ((xNew, yNew), xNew)
+
 \end{code}
 
 \end{frame}
 
 \begin{frame}{Prior}
 
-I give you the prior $\mathbb{P}(A)$
+I give you the prior $\mathbb{P}(A)$\footnote{we are just going to track the $x$-axis so our state space is 2 dimensional}
 
 %if style == newcode
 \begin{code}
@@ -466,19 +495,19 @@ conv = map (\[x, y] -> (x, y)) .  map M.toList
 %endif
 
 \begin{code}
+m0 :: M.Vector Double
+m0 = M.fromList [0, 1]
+
 bigSigma0 :: M.Herm Double
-bigSigma0 = M.sym $ (2 M.>< 2) [1.0, 0.0,
-                                0.0, 1.0]
-
-prePriors :: Int -> Int -> [M.Vector Double]
-prePriors seed n =
-  evalState (replicateM n (sample $ G.Normal m02 bigSigma0))
-            (pureMT (fromIntegral seed))
-
+bigSigma0 = M.sym $ (2 M.>< 2)  [  1.0, 0.0,
+                                   0.0, 1.0]
 
 priorsPollen :: Histogram V.Vector (Bin2D BinD BinD) Double
 priorsPollen = hist2 $ conv $
                prePriors 2 100000
+  where prePriors seed n =
+          evalState  (replicateM n (sample $ G.Normal m0 bigSigma0))
+                     (pureMT (fromIntegral seed))
 \end{code}
 
 \end{frame}
@@ -490,6 +519,7 @@ marginalX, marginalY :: H.Histogram BinD Double
 marginalX = H.reduceX H.sum priorsPollen
 marginalY = H.reduceY H.sum priorsPollen
 
+m0X0, m1X0, m2X0, muX0, varX0 :: Double
 m0X0 = H.sum marginalX
 m1X0 = H.sum $ H.bmap (\f v -> v * f) marginalX
 m2X0 = H.sum $ H.bmap (\f v -> v^2 * f) marginalX
@@ -504,13 +534,15 @@ varX0 = (m2X0 / m0X0) - muX0^2
 I give you the model
 
 \begin{code}
-newState2 :: MonadRandom m => M.Vector Double -> m (M.Vector Double)
-newState2 xPrev = sample $ rvar (G.Normal (bigA2 M.#> xPrev) bigQ2)
+newState :: MonadRandom m =>
+             M.Vector Double -> m (M.Vector Double)
+newState xPrev =
+  sample $ rvar (G.Normal (bigAA #> xPrev) bigQ)
 \end{code}
 
 \begin{code}
 weightK :: M.Vector Double -> M.Vector Double -> Double
-weightK a b = pdf (G.Normal (bigH2 M.#> a) bigR) b
+weightK a b = pdf (G.Normal (bigHH #> a) bigR) b
 \end{code}
 
 \end{frame}
@@ -525,14 +557,15 @@ posteriorizeK :: MonadRandom m =>
                  M.Vector Double ->
                  m (H.Histogram (Bin2D BinD BinD) Double)
 posteriorizeK q d = do
-  u <- mapM newState2 $ map (\(x, y) -> M.vector [x, y]) $
+  w <- mapM newState $ map (\(x, y) -> M.vector [x, y]) $
        map fst $ H.asList q
-  let newQ = hist2 $ map (\v -> (v M.! 0, v M.! 1)) u
+  let newQ = hist2 $ map (\v -> (v M.! 0, v M.! 1)) w
   return $ H.bmap (\(u, v) p -> p * weightK (M.vector [u, v]) d) newQ
 \end{code}
 
 %if style == newcode
 \begin{code}
+test :: H.Histogram (Bin2D BinD BinD) Double
 test = evalState (posteriorizeK priorsPollen (head $ map fst $ take 10 pollenSamples))
                  (pureMT 42)
 
@@ -540,6 +573,7 @@ marginal1X, marginal1Y :: H.Histogram BinD Double
 marginal1X = H.reduceX H.sum test
 marginal1Y = H.reduceY H.sum test
 
+m0X1, m1X1, m2X1, muX1, varX1 :: Double
 m0X1 = H.sum marginal1X
 m1X1 = H.sum $ H.bmap (\f v -> v * f) marginal1X
 m2X1 = H.sum $ H.bmap (\f v -> v^2 * f) marginal1X
@@ -612,6 +646,20 @@ $$
 
 \begin{frame}{Kalman in Haskell}
 
+%if style == newcode
+\begin{code}
+kalmans :: (M.Field t, Num (M.Vector t)) =>
+           M.Vector t
+        -> M.Matrix t
+        -> M.Matrix t
+        -> M.Matrix t
+        -> M.Matrix t
+        -> M.Matrix t
+        -> [M.Vector t]
+        -> [(M.Vector t, M.Matrix t)]
+\end{code}
+%endif
+
 \begin{code}
 kalmans muPrior sigmaPrior bigH bigSigmaY bigA bigSigmaX ys = scanl kalman (muPrior, sigmaPrior) ys
   where
@@ -629,6 +677,20 @@ kalmans muPrior sigmaPrior bigH bigSigmaY bigA bigSigmaX ys = scanl kalman (muPr
 \end{frame}
 
 \begin{frame}{With Comments}
+
+%if style == newcode
+\begin{code}
+kalmans' :: (M.Field t, Num (M.Vector t)) =>
+            M.Vector t
+         -> M.Matrix t
+         -> M.Matrix t
+         -> M.Matrix t
+         -> M.Matrix t
+         -> M.Matrix t
+         -> [M.Vector t]
+         -> [(M.Vector t, M.Matrix t)]
+\end{code}
+%endif
 
 \begin{code}
 -- R n -> Sq n -> L m n -> Sq m -> Sq n -> Sq n -> [R m] ->
@@ -694,6 +756,34 @@ kalmans''' muPrior sigmaPrior bigH bigSigmaY bigA bigSigmaX ys = scanl kalman (m
         xHatFlatNew = bigA S.#> xHat
         bigSigmaHatFlatNew = bigA S.<> bigSigmaHat S.<> (S.tr bigA) + bigSigmaX
 \end{code}
+
+\end{frame}
+
+\section{Napierian Functors}
+
+\begin{frame}{Even Better}
+
+\begin{itemize}
+  \item With Napierian functors we can do even better
+  \item Come back next year for variational inference using Napierian functors
+  \item See Jeremy Gibbons' "APLicative Programming with Naperian Functors"
+\end{itemize}
+
+%if style == newcode
+\begin{code}
+jSaxis :: [Double] -> Axis B V2 Double
+jSaxis xs = r2Axis &~ do
+  histogramPlot xs $ do
+    plotColor .= blue
+    areaStyle . _opacity .= 0.1
+    P.numBins .= numBins
+  xMin .= Just (-5.0)
+  xMax .= Just 5.0
+
+main = do
+  renderRasterific "diagrams/prior.png" (dims2D 500.0 500.0) (renderAxis $ jSaxis undefined) -- priors)
+\end{code}
+%endif
 
 \end{frame}
 
