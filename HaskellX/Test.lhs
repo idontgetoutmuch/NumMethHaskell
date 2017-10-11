@@ -36,6 +36,8 @@
 %format bigR            = "\boldsymbol{R}"
 %format m0              = "\boldsymbol{m}_0"
 %format bigSigma0       = "\boldsymbol{\Sigma}_0"
+%format theta           = "\theta"
+%format forall          = "\forall"
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -61,6 +63,7 @@
 \author{Dominic Steinitz}
 \date{Thursday 12 October 17}
 \title{Making Kalman Filtering Correct with Types}
+\author[Dominic Steinitz]{Dominic Steinitz \\ @@idontgetoutmuch \\ \url{https://idontgetoutmuch.wordpress.com}}
 \hypersetup{
  pdfauthor={Dominic Steinitz},
  pdfkeywords={},
@@ -107,8 +110,8 @@
   \begin{block}{Game}
     \begin{itemize}
     \item I select a number at random from a normal distribution.
-    \item At time 1 I give you some information: the number with added noise.
-    \item At time 2 I give you more information: the same number but with different added noise.
+    \item At time 1, I give you some information: the number with added noise.
+    \item At time 2, I give you more information: the same number but with different added noise.
     \item And so on $\ldots$
     \end{itemize}
   \end{block}
@@ -158,14 +161,12 @@ module Test ( kalmans'''
             , m1X1
             , m2X1
             , muX1
+            , m0Y1
+            , m1Y1
+            , muY1
             , marginal1X
             , marginal1Y
             , varX1
-            , m0X0
-            , m1X0
-            , m2X0
-            , muX0
-            , varX0
             , x0
             , sigma
             , likelihood
@@ -174,6 +175,7 @@ module Test ( kalmans'''
             , sigma0
             , hist
             , priors
+            , main
             ) where
 
 import Control.Monad
@@ -185,7 +187,7 @@ import Control.Monad.Loops as ML
 import qualified Data.Vector.Unboxed as V
 import Data.Histogram.Fill
 import qualified Data.Histogram as H
-import Data.Histogram.Generic ( Histogram )
+import Data.Histogram ( Histogram )
 
 import qualified Control.Foldl as F
 
@@ -197,7 +199,7 @@ import qualified Data.Random.Distribution.MultivariateNormal as G
 
 import           GHC.TypeLits
 
-import Diagrams.Prelude hiding ( normal, sample, (<>), inv )
+import Diagrams.Prelude hiding ( normal, sample, (<>), inv, trace )
 import Diagrams.Backend.Rasterific
 import Plots hiding ( numBins, pdf )
 import qualified Plots as P
@@ -222,28 +224,35 @@ stats v = F.fold stats' v
         mean2 = x2Sum / n
         var = n * (mean2 - mean * mean) / (n - 1)
 
-hb :: F.Foldable f => f Double -> HBuilder Double (Histogram V.Vector BinD Double)
+hb :: F.Foldable f => f Double -> HBuilder Double (Histogram BinD Double)
 hb xs = forceDouble -<< mkSimple (binD lower numBins upper)
   where
     (varX, xBar, _) = stats xs
     lower = xBar - 4.0 * sqrt varX
     upper = xBar + 4.0 * sqrt varX
 
-hist :: F.Foldable f => f Double -> Histogram V.Vector BinD Double
+hist :: F.Foldable f => f Double -> Histogram BinD Double
 hist xs = fillBuilder (hb xs) xs
 \end{code}
 %endif
 
-I give you the prior $\mathbb{P}(A)$
+I give you the prior $\mathbb{P}(\theta)$ (was $\mathbb{P}(A)$) as a \textit{histogram}
 
 \begin{code}
 mu0, sigma0 :: Double
 mu0 = 0.0
 sigma0 = 1.00
 
-priors :: Histogram V.Vector BinD Double
+priors :: Histogram BinD Double
 priors = hist $ runSampler (normal mu0 sigma0) 2 100000
 \end{code}
+
+\note{
+
+The histogram is generated from a normal distribution but as
+you can see below it is not really normal.
+
+}
 
 \end{frame}
 
@@ -262,18 +271,23 @@ x0 :: Double
 x0 = 1.00
 \end{code}
 
-I tell you the model aka the likelihood $\mathbb{P}(A \,\vert\, B)$
+\pause
+
+I tell you the model aka the likelihood $\mathbb{P}(D \,\vert\,
+\theta)$ (was $\mathbb{P}(A \,\vert\, B)$)
 
 \begin{code}
 sigma :: Double
 sigma = 0.81
 
 likelihood :: Double -> Double -> Double
-likelihood a b = n / d
+likelihood bigD theta= n / d
   where
-    n = exp (-(a-b)^2 / (2 * sigma^2))
+    n = exp (-(bigD - theta)^2 / (2 * sigma^2))
     d = sqrt (2 * sigma^2)
 \end{code}
+
+\pause
 
 Finally I give you some noisy data
 
@@ -289,18 +303,32 @@ ds = runSampler (normal x0 sigma) 2 10
 Now you can use Bayes' to determine my secret value
 
 \begin{code}
-posteriorize ::  H.Histogram BinD Double ->
+posteriorize ::  Histogram BinD Double ->
                  Double ->
-                 H.Histogram BinD Double
-posteriorize q d = H.bmap (\v p -> p * likelihood v d) q
+                 Histogram BinD Double
+posteriorize q d = H.bmap bayes q
+  where
+    bayes theta p = p * likelihood d theta
+\end{code}
 
-qs :: [H.Histogram BinD Double]
+\pause
+
+\begin{code}
+qs :: [Histogram BinD Double]
 qs = scanl posteriorize priors ds
+\end{code}
 
+\pause
+
+\begin{code}
 ss :: [Double]
 ss = map H.sum qs
+\end{code}
 
-ns :: [H.Histogram BinD Double]
+\pause
+
+\begin{code}
+ns :: [Histogram BinD Double]
 ns = zipWith (\s q -> H.map (/ s) q) ss qs
 \end{code}
 \end{frame}
@@ -345,6 +373,8 @@ ns = zipWith (\s q -> H.map (/ s) q) ss qs
     $$
   \end{block}
 
+\pause
+
   Writing $x_3 = \mathrm{d}x_1 / \mathrm{d}t$ and
   $x_4 = \mathrm{d}x_2 / \mathrm{d}t$ this becomes
 
@@ -386,9 +416,11 @@ ns = zipWith (\s q -> H.map (/ s) q) ss qs
     $$
   \end{block}
 
+\pause
+
   \begin{block}{Can only observe position}
     $$
-    \begin{bmatrix}y^{(k)}_1 \\ ^{(k)}_2\end{bmatrix} =
+    \begin{bmatrix}y^{(k)}_1 \\ y^{(k)}_2\end{bmatrix} =
     \begin{bmatrix}
       1 & 0 & 0 & 0\\
       0 & 1 & 0 & 0
@@ -397,6 +429,8 @@ ns = zipWith (\s q -> H.map (/ s) q) ss qs
     \boldsymbol{R}_k
     $$
   \end{block}
+
+\pause
 
   \begin{block}{In vector notation}
     $$
@@ -447,8 +481,34 @@ We can play the same game as we did before in this more complicated
 setting. The derivation is similar but much longer.
 \end{block}
 
+\pause
+
 First I sample my secret value, in this case a path followed by the
-pollen particle. I simultaneously create a sample of noisy data.
+pollen particle. I simultaneously create a sample of noisy data\footnote{Using the \texttt{random-fu} and \texttt{hmatrix} packages}.
+
+\note{
+
+I let the computer do the work; I only select the starting value which
+happens to be $(0,1)$, that is starting $0$ with velocity $1.
+
+I take the starting value
+
+\begin{itemize}
+  \item Update it according the state update part of the model
+  \item Add some noise
+  \item Take the state and provide a noisy observation of it
+\end{itemize}
+
+}
+
+\pause
+
+%{
+%format G.Normal = "{\color{blue} G.Normal}"
+%format bigAA    = "{\color{blue} \boldsymbol{A}}"
+%format bigHH    = "{\color{blue} \boldsymbol{H}}"
+%format bigQ     = "{\color{blue} \boldsymbol{Q}}"
+%format bigR     = "{\color{blue} \boldsymbol{R}}"
 
 \begin{code}
 pollenSamples :: [(M.Vector Double, M.Vector Double)]
@@ -459,35 +519,56 @@ pollenSamples = evalState  (ML.unfoldrM pollenSample m0)
       xNew <- sample $ rvar (G.Normal (bigAA #> xPrev) bigQ)
       yNew <- sample $ rvar (G.Normal (bigHH #> xNew) bigR)
       return $ Just ((xNew, yNew), xNew)
-
 \end{code}
+%}
 
 \end{frame}
 
 \begin{frame}{Prior}
 
-I give you the prior $\mathbb{P}(A)$\footnote{we are just going to track the $x$-axis so our state space is 2 dimensional}
+I give you the prior $\mathbb{P}(A)$ again as a
+\textit{histogram} but now 2D\footnote{we are just going to
+track the $x$-axis so our state space is 2 dimensional}
 
 %if style == newcode
 \begin{code}
 hb2 :: [(Double, Double)] ->
        HBuilder (Double, Double)
-                (Histogram V.Vector (Bin2D BinD BinD) Double)
+                (Histogram (Bin2D BinD BinD) Double)
 hb2 xys = forceDouble -<< mkSimple (Bin2D (binD lowerX numBins upperX)
                                           (binD lowerY numBins upperY))
   where
     xs = map fst xys
     ys = map snd xys
     (varX, xBar, _) = stats xs
-    lowerX = xBar - 4.0 * sqrt varX
-    upperX = xBar + 4.0 * sqrt varX
+    lowerX = xBar - 5.0 * sqrt varX
+    upperX = xBar + 5.0 * sqrt varX
     (varY, yBar, _) = stats ys
-    lowerY = yBar - 4.0 * sqrt varY
-    upperY = xBar + 4.0 * sqrt varY
+    lowerY = yBar - 5.0 * sqrt varY
+    upperY = xBar + 5.0 * sqrt varY
+
+hb2' :: [(Double, Double)] ->
+       HBuilder (BinValue (Bin2D BinD BinD), Double)
+                (Histogram (Bin2D BinD BinD) Double)
+hb2' xys = forceDouble -<< mkWeighted (Bin2D (binD lowerX numBins upperX)
+                                             (binD lowerY numBins upperY))
+  where
+    xs = map fst xys
+    ys = map snd xys
+    (varX, xBar, _) = stats xs
+    lowerX = xBar - 5.0 * sqrt varX
+    upperX = xBar + 5.0 * sqrt varX
+    (varY, yBar, _) = stats ys
+    lowerY = yBar - 5.0 * sqrt varY
+    upperY = xBar + 5.0 * sqrt varY
 
 hist2 :: [(Double, Double)] ->
-         Histogram V.Vector (Bin2D BinD BinD) Double
+         Histogram (Bin2D BinD BinD) Double
 hist2 xys = fillBuilder (hb2 xys) xys
+
+hist2' :: [((Double, Double), Double)] ->
+         Histogram (Bin2D BinD BinD) Double
+hist2' xys = fillBuilder (hb2' (map fst xys)) xys
 
 conv :: [M.Vector Double] -> [(Double, Double)]
 conv = map (\[x, y] -> (x, y)) .  map M.toList
@@ -502,7 +583,7 @@ bigSigma0 :: M.Herm Double
 bigSigma0 = M.sym $ (2 M.>< 2)  [  1.0, 0.0,
                                    0.0, 1.0]
 
-priorsPollen :: Histogram V.Vector (Bin2D BinD BinD) Double
+priorsPollen :: Histogram (Bin2D BinD BinD) Double
 priorsPollen = hist2 $ conv $
                prePriors 2 100000
   where prePriors seed n =
@@ -515,18 +596,23 @@ priorsPollen = hist2 $ conv $
 \begin{frame}{An Aside: Marginals}
 
 \begin{code}
-marginalX, marginalY :: H.Histogram BinD Double
+marginalX, marginalY :: Histogram BinD Double
 marginalX = H.reduceX H.sum priorsPollen
 marginalY = H.reduceY H.sum priorsPollen
-
-m0X0, m1X0, m2X0, muX0, varX0 :: Double
-m0X0 = H.sum marginalX
-m1X0 = H.sum $ H.bmap (\f v -> v * f) marginalX
-m2X0 = H.sum $ H.bmap (\f v -> v^2 * f) marginalX
-muX0 = m1X0 / m0X0
-varX0 = (m2X0 / m0X0) - muX0^2
 \end{code}
 
+\end{frame}
+
+\begin{frame}{Marginal Prior for Position}
+  \begin{center}
+    \includegraphics[height=0.80\textheight]{./diagrams/marginalY.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}{Marginal Prior for Velocity}
+  \begin{center}
+    \includegraphics[height=0.80\textheight]{./diagrams/marginalX.png}
+  \end{center}
 \end{frame}
 
 \begin{frame}{Model}
@@ -553,34 +639,84 @@ Now you can use Bayes' to track the path of the pollen.
 
 \begin{code}
 posteriorizeK :: MonadRandom m =>
-                 H.Histogram (Bin2D BinD BinD) Double ->
+                 Histogram (Bin2D BinD BinD) Double ->
                  M.Vector Double ->
-                 m (H.Histogram (Bin2D BinD BinD) Double)
+                 m (Histogram (Bin2D BinD BinD) Double)
 posteriorizeK q d = do
-  w <- mapM newState $ map (\(x, y) -> M.vector [x, y]) $
-       map fst $ H.asList q
-  let newQ = hist2 $ map (\v -> (v M.! 0, v M.! 1)) w
+  let xfs = H.asList q
+      xs = map pair2Vec $ map fst xfs
+      fs = map snd xfs
+  xNew <- mapM newState xs
+  let newQ = hist2' $ zip (map vec2Pair xNew) fs
   return $ H.bmap (\(u, v) p -> p * weightK (M.vector [u, v]) d) newQ
 \end{code}
 
 %if style == newcode
 \begin{code}
-test :: H.Histogram (Bin2D BinD BinD) Double
-test = evalState (posteriorizeK priorsPollen (head $ map fst $ take 10 pollenSamples))
-                 (pureMT 42)
+vec2Pair :: M.Vector Double -> (Double, Double)
+vec2Pair v = (v M.! 0, v M.! 1)
 
-marginal1X, marginal1Y :: H.Histogram BinD Double
+pair2Vec :: (Double, Double) -> M.Vector Double
+pair2Vec (x, y) = M.vector [x, y]
+
+test :: Histogram (Bin2D BinD BinD) Double
+test = evalState (posteriorizeK priorsPollen (head $
+                                              map (M.vector . pure . (!!0) . M.toList) $
+                                              map fst $ take 10 pollenSamples))
+                 (pureMT 42)
+\end{code}
+%endif
+
+\end{frame}
+
+\begin{frame}{Position Estimate After 1 Observation}
+  \begin{center}
+    \includegraphics[height=0.80\textheight]{./diagrams/marginal1Y.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}{Velocity Estimate After 1 Observation}
+  \begin{center}
+    \includegraphics[height=0.80\textheight]{./diagrams/marginal1X.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}{Recall the Model}
+
+\begin{verbatim}
+*Test> take 1 pollenSamples
+[([9.99586e-2,0.75767],[-0.36189])]
+\end{verbatim}
+
+\begin{code}
+marginal1X, marginal1Y :: Histogram BinD Double
 marginal1X = H.reduceX H.sum test
 marginal1Y = H.reduceY H.sum test
 
 m0X1, m1X1, m2X1, muX1, varX1 :: Double
 m0X1 = H.sum marginal1X
 m1X1 = H.sum $ H.bmap (\f v -> v * f) marginal1X
-m2X1 = H.sum $ H.bmap (\f v -> v^2 * f) marginal1X
-muX1 = m1X1 / m0X1
-varX1 = (m2X1 / m0X1) - muX1^2
+\end{code}
+
+%if style == newcode
+\begin{code}
+m0Y1, m1Y1, muY1 :: Double
+m0Y1 = H.sum marginal1Y
+m1Y1 = H.sum $ H.bmap (\f v -> v * f) marginal1Y
 \end{code}
 %endif
+
+\begin{code}
+muY1 = m1Y1 / m0Y1
+muX1 = m1X1 / m0X1
+\end{code}
+
+\begin{verbatim}
+*Test> muX1
+0.98156
+*Test> muY1
+9.98856e-2
+\end{verbatim}
 
 \end{frame}
 
@@ -588,7 +724,11 @@ varX1 = (m2X1 / m0X1) - muX1^2
 
 \begin{frame}{Recall the Model}
 
+\begin{block}{Wait a Minute $\ldots$}
 Compute power in 1968?
+\end{block}
+
+\pause
 
 Recall our model:
 
@@ -607,11 +747,13 @@ $$
 \boldsymbol{\upsilon}_i \sim {\cal{N}}\big(0,\boldsymbol{\Sigma}^{(y)}_i\big)
 $$
 
+The model is \textbf{linear} and the errors are \textbf{Gaussian}
+
 \end{frame}
 
 \begin{frame}{Kalman Itself}
 
-A \textbf{lot} of algebraic manipulation give the optimal solution.
+A \textbf{lot} of algebraic manipulation gives the optimal solution.
 
 \begin{block}{Prediction Step}
 $$
@@ -713,37 +855,11 @@ kalmans' muPrior sigmaPrior bigH bigSigmaY bigA bigSigmaX ys = scanl kalman (muP
 
 \begin{frame}{Why Walk?}
 
-%if style == newcode
 \begin{code}
 kalmans'' :: forall m n . (KnownNat m, KnownNat n) =>
-             S.R n -> S.Sq n -> S.L m n -> S.Sq m -> S.Sq n -> S.Sq n -> [S.R m] ->
-             [(S.R n, S.Sq n)]
-\end{code}
-%endif
-
-\begin{code}
-kalmans'' muPrior sigmaPrior bigH bigSigmaY bigA bigSigmaX ys = scanl kalman (muPrior, sigmaPrior) ys
-  where
-    kalman (xHatFlat, bigSigmaHatFlat) yy = (xHatFlatNew, bigSigmaHatFlatNew)
-      where
-        vv = yy - bigH S.#> xHatFlat
-        bigS = bigH S.<> bigSigmaHatFlat S.<> (tr bigH) + bigSigmaY
-        bigK = bigSigmaHatFlat S.<> (tr bigH) S.<> (S.inv bigS)
-        xHat = xHatFlat + bigK S.#> vv
-        bigSigmaHat = bigSigmaHatFlat - bigK S.<> bigS S.<> (S.tr bigK)
-        xHatFlatNew = bigA S.#> xHat
-        bigSigmaHatFlatNew = bigA S.<> bigSigmaHat S.<> (S.tr bigA) + bigSigmaX
-\end{code}
-
-\end{frame}
-
-\begin{frame}{Why Walk?}
-
-\begin{code}
-kalmans''' :: forall m n . (KnownNat m, KnownNat n) =>
               S.R n -> S.Sq n -> S.L m n -> S.Sq m -> S.Sq n -> S.Sq n -> [S.R m] ->
               [(S.R n, S.Sq n)]
-kalmans''' muPrior sigmaPrior bigH bigSigmaY bigA bigSigmaX ys = scanl kalman (muPrior, sigmaPrior) ys
+kalmans'' muPrior sigmaPrior bigH bigSigmaY bigA bigSigmaX ys = scanl kalman (muPrior, sigmaPrior) ys
   where
     kalman :: (S.R n, S.L n n) -> S.R m -> (S.R n, S.L n n)
     kalman (xHatFlat, bigSigmaHatFlat) yy = (xHatFlatNew, bigSigmaHatFlatNew)
@@ -759,29 +875,44 @@ kalmans''' muPrior sigmaPrior bigH bigSigmaY bigA bigSigmaX ys = scanl kalman (m
 
 \end{frame}
 
-\section{Napierian Functors}
+\section{Naperian Functors}
 
 \begin{frame}{Even Better}
 
 \begin{itemize}
-  \item With Napierian functors we can do even better
-  \item Come back next year for variational inference using Napierian functors
+  \item With Naperian functors we can do even better
+  \item Come back next year for variational inference using Naperian functors
   \item See Jeremy Gibbons' "APLicative Programming with Naperian Functors"
+  \item Haskell package \texttt{random-fu} for random variables
+  \item Haskell package \texttt{histogram-fill} for histograms
+  \item Haskell package \texttt{kalman} for kalman, extended kalman, unscented kalman, particle filtering and smoothing
+  \item Haskell package \texttt{hmatrix} for statically typed matrices
 \end{itemize}
 
 %if style == newcode
 \begin{code}
-jSaxis :: [Double] -> Axis B V2 Double
-jSaxis xs = r2Axis &~ do
-  histogramPlot xs $ do
-    plotColor .= blue
-    areaStyle . _opacity .= 0.1
-    P.numBins .= numBins
+kSaxis :: [(Double, Double)] -> Axis B V2 Double
+kSaxis xs = r2Axis &~ do
+  linePlot' xs
   xMin .= Just (-5.0)
   xMax .= Just 5.0
+  yMin .= Just 0.0
+  yMax .= Just 4200.0
 
+main :: IO ()
 main = do
-  renderRasterific "diagrams/prior.png" (dims2D 500.0 500.0) (renderAxis $ jSaxis undefined) -- priors)
+  renderRasterific "diagrams/marginalX.png"
+                   (dims2D 500.0 500.0)
+                   (renderAxis $ kSaxis $ H.asList marginalX)
+  renderRasterific "diagrams/marginalY.png"
+                   (dims2D 500.0 500.0)
+                   (renderAxis $ kSaxis $ H.asList marginalY)
+  renderRasterific "diagrams/marginal1X.png"
+                   (dims2D 500.0 500.0)
+                   (renderAxis $ kSaxis $ H.asList marginal1X)
+  renderRasterific "diagrams/marginal1Y.png"
+                   (dims2D 500.0 500.0)
+                   (renderAxis $ kSaxis $ H.asList marginal1Y)
 \end{code}
 %endif
 
