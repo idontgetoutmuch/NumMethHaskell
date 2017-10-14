@@ -73,6 +73,8 @@
 
 \renewcommand{\hscodestyle}{\small}
 
+\newcommand{\blank}{\_}
+
 \begin{document}
 
 \maketitle
@@ -681,7 +683,7 @@ test = evalState (posteriorizeK priorsPollen (head $
   \end{center}
 \end{frame}
 
-\begin{frame}{Recall the Model}
+\begin{frame}{Marginals Again}
 
 \begin{verbatim}
 *Test> take 1 pollenSamples
@@ -880,7 +882,7 @@ kalmans'' muPrior sigmaPrior bigH bigSigmaY bigA bigSigmaX ys = scanl kalman (mu
 \begin{frame}{Even Better}
 
 \begin{itemize}
-  \item With Naperian functors we can do even better
+  \item With Naperian functors we can do even better\footnote{$F \simeq \mathrm{Hom}(A, \blank)$}
   \item Come back next year for variational inference using Naperian functors
   \item See Jeremy Gibbons' "APLicative Programming with Naperian Functors"
   \item Haskell package \texttt{random-fu} for random variables
