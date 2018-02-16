@@ -9,4 +9,4 @@ import Symplectic
 
 main :: IO ()
 main = do
-  putStrLn $ show $ reallyRunSteps' 10
+  putStrLn $ show $ reallyRunSteps' 1000000000

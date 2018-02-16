@@ -19,7 +19,10 @@ x3 = SVector{2,SVector{2,Float64}}(x1,x2)
     @inline function nablaQQ(qs)
         @inbounds q1 = qs[1]
         @inbounds q2 = qs[2]
-        r = (q1^2 + q2^2) ^ (3/2)
+        # r = (q1^2 + q2^2) ^ (3/2)
+        r1 = q1^2 + q2^2
+        r2 = sqrt(r1)
+        r = r1 * r2
         return SVector{2,Float64}(q1 / r, q2 / r)
     end
     @inline function nablaPP(ps)

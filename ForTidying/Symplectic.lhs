@@ -280,7 +280,10 @@ And here is the same thing using accelerate.
 >       where
 >         qq1 = qs ^. _x
 >         qq2 = qs ^. _y
->         r   = (qq1 ^ 2 + qq2 ^ 2) ** (3/2)
+>         -- r   = (qq1 ^ 2 + qq2 ^ 2) ** (3/2)
+>         r'  = qq1 ^ 2 + qq2 ^ 2
+>         r'' = sqrt r'
+>         r  = r' * r''
 >     nablaP' :: Exp (V2 Double) -> Exp (V2 Double)
 >     nablaP' ps = ps
 
@@ -360,17 +363,17 @@ Accelerate's LLVM
 
 Let's see what accelerate generates with
 
-~~~~ {.haskell .numberLines include="RunAccGPU.hs"}
+~~~~ {.haskell include="RunAccGPU.hs"}
 ~~~~
 
 It's a bit verbose but we can look at the key "loop": while5.
 
-~~~~ {.llvm .numberLines include="RunAccGPU.ll"}
+~~~~ {.llvm include="RunAccGPU.ll"}
 ~~~~
 
 And then we can run it for $10^8$ steps and see how long it takes.
 
-~~~~ {.numberLines include="TimeAccGPU.txt"}
+~~~~ {include="TimeAccGPU.txt"}
 ~~~~
 
 Julia's LLVM
@@ -378,12 +381,12 @@ Julia's LLVM
 
 Let's try the same problem in Julia.
 
-~~~~ {.julia .numberLines include="JuliaCPU.jl"}
+~~~~ {.julia include="JuliaCPU.jl"}
 ~~~~
 
 Again we can see how long it takes
 
-~~~~ {.numberLines include="TimeJulGPU.txt"}
+~~~~ {include="TimeJulGPU.txt"}
 ~~~~
 
 Surprisingly it takes longer but I am Julia novice so it could be some
@@ -397,7 +400,7 @@ what the code generation cost is and the execution cost. It may be
 that Julia takes longer to generate code but has better execution
 times.
 
-~~~~ {.llvm .numberLines include="RunJulGPU.ll"}
+~~~~ {.llvm include="RunJulGPU.ll"}
 ~~~~
 
 We can see two things:
@@ -443,4 +446,10 @@ it's fair to infer that Julia has a higher start up cost and Haskell
 is 2 times quicker *but* as noted above this may be because of
 different math libraries.
 
+Colophon
+========
 
+I used shake to build some of the material "on the fly". There are
+still some manual steps to producing the blog post. The code can be
+downloaded from
+[github](https://github.com/idontgetoutmuch/NumMethHaskell).

@@ -334,6 +334,7 @@ ggsave("diagrams/naive-tau-hist.png")
 #+END_SRC
 
 #+RESULTS:
+| 13.879012739008 | 10.8141338400682 | 13.762569663808401 | 15.329011470418198 | 15.848963478596099 | 15.7771385162079 | 20.1741961946218 | 17.8012160193325 | 23.238689799141802 | 19.868300391989898 | 23.7402262738693 | 26.8019553246723 | 20.083392527664103 | 23.4145435896835 | 24.7200251935733 | 27.3354958359472 | 26.403068865026196 | 22.421443616100003 | 23.8750194499914 | 32.7722380260334 | 30.3560589524352 | 28.259252288642003 | 32.6389735529048 | 36.5508168682625 | 38.9799062686564 | 35.096014823627 | 36.459734296185204 | 34.297357521091 | 39.9662044451457 | 38.6560107604838 | 41.9564452588066 | 43.4801584081805 | 45.1737173961368 | 42.721254611644895 | 46.060405758925704 | 42.394281773946 | 45.352636082403095 | 46.2130940522293 | 43.930163935112105 | 50.07585747447371 | 51.432597060420505 | 51.2417796730478 | 54.59214279496899 | 52.4739198631392 | 52.1266098067195 | 56.908917854366294 | 55.296074330008004 | 61.0326126496146 | 58.093962974511996 | 61.3768605551446 | 62.708235583448705 | 62.2755543300632 | 69.4666005435424 | 69.41437847257811 | 70.1974734225191 | 72.6084116440412 | 75.4944353953216 | 76.19763235047401 | 71.4152018170635 | 80.6267424977675 | 81.1920837859699 | 84.4075072427043 | 87.28001220020408 | 91.07942102004391 | 88.3999574691562 | 94.86559379049709 | 94.73886586345459 | 98.2847134171348 | 100.025602850239 | 101.585931958307 | 99.70513833515069 | 103.801589949456 | 107.371739956399 | 105.902248612901 | 108.805776607938 | 113.2781922949 | 115.689993223236 | 117.020288694788 | 116.05129214569901 | 117.580482022975 | 125.327955421571 | 124.56742716257 | 126.19456850415101 | 127.734027617414 | 127.372476430647 | 133.346393175689 | 133.52229233935802 | 135.59793524607 | 140.053361922857 | 141.807900843118 | 145.062656027055 | 142.95241736928003 | 147.430766833598 | 151.060443004058 | 147.556264465215 | 150.106256308869 | 151.510174902122 | 152.789729201095 | 158.175961617131 | 161.43704954722799 |
 
 #+BEGIN_SRC python :exports none :session py3-lr-session
   with chg_model:
@@ -465,6 +466,8 @@ plt.savefig("diagrams/sigmoid.png")
 chg_cont_model = Model()
 #+END_SRC
 
+#+RESULTS:
+
 #+BEGIN_SRC python :exports code :session py3-lr-session
 with chg_cont_model:
     
@@ -502,7 +505,48 @@ with chg_cont_model:
   plt.savefig("diagrams/cont-py3.png")
 #+END_SRC
 
+#+BEGIN_SRC python :exports none :session py3-lr-session
+from pymc3 import init_nuts
+
+with chg_cont_model:
+  #MAP
+  start_map_cont, nuts_step_cont = init_nuts(init='MAP')
+  #ADVI
+  start_advi_cont, nuts_step_cont = init_nuts(init='ADVI')
+#+END_SRC
+
 #+RESULTS:
+
+#+BEGIN_SRC python :exports both :session py3-lr-session
+  pd.DataFrame(list(start_advi_cont.items()))
+#+END_SRC
+
+#+RESULTS:
+:         0          1
+: 0     tau  66.795927
+: 1   beta1   1.206623
+: 2  alpha2   2.435531
+: 3   beta2   1.541056
+: 4  sigma1   4.621225
+: 5  sigma2   5.521459
+: 6  alpha1   4.096397
+
+#+BEGIN_SRC python :exports both :session py3-lr-session
+import pymc3 as pm
+
+with chg_cont_model:
+    approx = pm.fit(100000, callbacks=[pm.callbacks.CheckParametersConvergence(tolerance=1e-4)])
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_SRC python :exports both :session py3-lr-session
+  plt.plot(approx.hist)
+  plt.savefig("diagrams/elbo-trace.png")
+#+END_SRC
+
+#+RESULTS:
+| <matplotlib.lines.Line2D | object | at | 0x1281bd0b8> |
 
 *** The Results
 
@@ -906,6 +950,22 @@ $TOP$ & Top-level input & Tuple of $(S^{TOP}, GF, GC, LF, LC, t^{ID}, t^D, t^{PD
 \quad $t^{PD}$ & Payment date & Date
 \end{tabular}
 \end{center}
+
+* Colophon
+
+** Org Mode
+
+*** An Alternative to Jupyter
+
+**** Method
+
+The presentation was written using emacs / org mode and contains the
+code used as well as the source for the slides.
+
+**** Source
+
+Source for slides and code available here:
+https://github.com/idontgetoutmuch/NumMethHaskell/blob/master/Insurely.org
 
 # As far as I can tell we need this for reftex but not for actual
 # citation production as long as we have an ok .bbl file.

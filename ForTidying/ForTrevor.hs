@@ -23,17 +23,18 @@ p20 = sqrt ((1 + e) / (1 - e))
 h :: Double
 h = 0.01
 
-oneStep2 :: Double -> Exp (V2 Double, V2 Double) -> Exp (V2 Double, V2 Double)
-oneStep2 hh prev = lift (qNew, pNew)
+oneStep2 :: Double -> Exp (V2 (V2 Double)) -> Exp (V2 (V2 Double))
+oneStep2 hh prev = lift $ V2 qNew pNew
   where
     h2 = hh / 2
-    hhs = lift ((pure hh) :: V2 Double)
-    hh2s = (lift ((pure h2) :: V2 Double))
+    hhs = lift $ V2 hh hh
+    hh2s = lift $ V2 h2 h2
     pp2 = psPrev - hh2s * nablaQ' qsPrev
     qNew = qsPrev + hhs * nablaP' pp2
     pNew = pp2 - hh2s * nablaQ' qNew
-    qsPrev = A.fst prev
-    psPrev = A.snd prev
+    qsPrev :: Exp (V2 Double)
+    qsPrev = prev ^. _x
+    psPrev = prev ^. _y
     nablaQ' :: Exp (V2 Double) -> Exp (V2 Double)
     nablaQ' qs = lift (V2 (qq1 / r) (qq2 / r))
       where
@@ -81,23 +82,23 @@ oneStepH98 hh prev = V2 qNew pNew
 -- nSteps :: Int
 -- nSteps = 100
 
-dummyStart :: Exp (V2 Double, V2 Double)
-dummyStart = lift (V2 q10 q20, V2 p10 p20)
+dummyStart :: Exp (V2 (V2 Double))
+dummyStart = lift $ V2 (V2 q10 q20) (V2 p10 p20)
 
 dummyStart98 :: V2 (V2 Double)
 dummyStart98 = V2 (V2 q10 q20) (V2 p10 p20)
 
--- dummyInputs :: Acc (Array DIM1 (V2 Double, V2 Double))
+-- dummyInputs :: Acc (Array DIM1 (V2 (V2 Double)))
 -- dummyInputs = A.use $ A.fromList (Z :. nSteps) $
 --               P.replicate nSteps (pure 0.0 :: V2 Double, pure 0.0 :: V2 Double)
 
--- runSteps :: Acc (Array DIM1 (V2 Double, V2 Double))
+-- runSteps :: Acc (Array DIM1 (V2 (V2 Double)))
 -- runSteps = A.scanl (\s _x -> (oneStep2 h s)) dummyStart dummyInputs
 
 nSteps :: Int
 nSteps = 80000000 -- 100000000
 
-runSteps' :: Exp (V2 Double, V2 Double) -> Exp (V2 Double, V2 Double)
+runSteps' :: Exp (V2 (V2 Double)) -> Exp (V2 (V2 Double))
 runSteps' = A.iterate (lift nSteps) (oneStep2 h)
 
 myIterate :: Int -> (a -> a) -> a -> a
@@ -110,17 +111,17 @@ myIterate n f x | n P.<= 0 = x
 runSteps98' :: V2 (V2 Double) -> V2 (V2 Double)
 runSteps98' = myIterate nSteps (oneStepH98 h)
 
-reallyRunSteps' :: (Array DIM1 (V2 Double, V2 Double))
+reallyRunSteps' :: (Array DIM1 (V2 (V2 Double)))
 reallyRunSteps' = CPU.run $
                   A.scanl (\s _x -> runSteps' s) dummyStart
-                  (A.use $ A.fromList (Z :. 1) [(V2 0.0 0.0, V2 0.0 0.0)])
+                  (A.use $ A.fromList (Z :. 1) [V2 (V2 0.0 0.0) (V2 0.0 0.0)])
 
 main :: IO ()
 main = do
   putStrLn $ show $ reallyRunSteps'
   -- putStrLn $ show $ runSteps98' dummyStart98
 
--- Onesteph98 :: Double -> (V2 Double, V2 Double) -> (V2 Double, V2 Double)
+-- Onesteph98 :: Double -> (V2 (V2 Double)) -> (V2 (V2 Double))
 -- oneStepH98 h prev = (qNew, pNew)
 --   where
 --     h2 = h / 2
@@ -138,7 +139,7 @@ main = do
 --         r   = (q1 ^ 2 + q2 ^ 2) ** (3/2)
 --     nablaP ps = ps
 
--- bigH2BodyH98 :: (V2 Double, V2 Double) -> Double
+-- bigH2BodyH98 :: (V2 (V2 Double)) -> Double
 -- bigH2BodyH98 x = ke + pe
 --   where
 --     pe = let V2 q1 q2 = P.fst x in negate $ recip (sqrt (q1^2 + q2^2))

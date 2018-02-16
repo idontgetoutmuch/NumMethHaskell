@@ -21,17 +21,25 @@
 \usepackage[style=alphabetic]{biblatex}
 \usetheme{Frankfurt}
 \author{Dominic Steinitz}
-\date{Monday 17 July 17}
-\title{Bayesian Change Point Detection}
+\date{Wednesday 27 September 17}
+\title{Hacking on GHC: A Worm's Eye View}
 \hypersetup{
  pdfauthor={Dominic Steinitz},
- pdftitle={Bayesian Change Point Detection},
  pdfkeywords={},
- pdfsubject={Bayesian change point analysis of UK / South Korea trade statistics},
  pdflang={English}}
 
 \lstnewenvironment{haskelL}[1][]
       {\lstset{language=haskell}\lstset{escapeinside={(*@}{@*)},
+          basicstyle=\ttfamily\scriptsize,
+          keywordstyle=\color{blue}\ttfamily,
+          stringstyle=\color{red}\ttfamily,
+          commentstyle=\color{brown}\ttfamily,
+          language=haskell, label= , caption= ,
+          captionpos=b, numbers=none}}
+      {}
+
+\lstnewenvironment{plainC}[1][]
+      {\lstset{language=C}\lstset{escapeinside={(*@}{@*)},
           basicstyle=\ttfamily\scriptsize,
           keywordstyle=\color{blue}\ttfamily,
           stringstyle=\color{red}\ttfamily,
@@ -61,6 +69,15 @@
 
 \section{Introduction}
 
+\begin{frame}[fragile]{\texttt{libraries/base/GHC/Float.hs}}
+
+\begin{haskelL}
+  abs x | x == 0 = 0 -- handles (-0.0)
+        | x > 0 = x
+        | otherwise = negateFloat x
+\end{haskelL}
+\end{frame}
+
 \begin{frame}{April 2013}
 
   \begin{itemize}
@@ -76,14 +93,14 @@
         Otherwise we'll just end up adding an extra test
         and everyone's code will run a little bit slower.
       \item Colleague points out in December 2016
-        that this really slows their code down.
+        that this \textcolor{red}{really} slows their code down.
     \end{itemize}
 
 \end{frame}
 
 \begin{frame}{A Little Learning}
 
-  \poemtitle{An Essay on Criticism}
+  % \poemtitle{An Essay on Criticism}
   \settowidth{\versewidth}{Fired at first sight with what the Muse imparts,}
   \begin{verse}[\versewidth]
     A little learning is a dangerous thing; \\
@@ -121,19 +138,7 @@
   \end{center}
 \end{frame}
 
-\section{Code}
-\label{sec:orgheadline9}
-\subsection{2.1}
-\label{sec:orgheadline8}
-
-\begin{frame}[fragile,label={sec:orgheadline7}]{\texttt{libraries/base/GHC/Float.hs}}
-
-\begin{haskelL}
-  abs x | x == 0 = 0 -- handles (-0.0)
-        | x > 0 = x
-        | otherwise = negateFloat x
-\end{haskelL}
-\end{frame}
+\section{Generated x86}
 
 \begin{frame}[fragile]{Generated X86}
 \lstset{
@@ -196,7 +201,7 @@ _c41v:
 
 \begin{lstlisting}
 _c41q:
-        ;; We get here if x is less than 0 or ;;
+        ;; We get here if x is less than 0 or
 	;; possibly if any operand is a NaN - the
 	;; third branch
         leaq GHC.Types.F#_con_info(%rip),%rax
@@ -234,6 +239,7 @@ _c41t:
 \end{lstlisting}
 \end{frame}
 
+\section{\#ghc Comments}
 \begin{frame}[fragile]{rwbarton comments}
 Yes, this would be worthwhile and not difficult. See
 
@@ -245,6 +251,42 @@ Yes, this would be worthwhile and not difficult. See
   \url{https://phabricator.haskell.org/D1334} for a recent
   example.
 \end{itemize}
+
+\end{frame}
+
+\section{The Solution}
+
+\begin{frame}[fragile]{What Does C Do?}
+
+  \begin{plainC}
+    double addabs(double x, double y)
+    {
+      double temp;
+      temp = fabs(x) + fabs(y);
+      return(temp);
+    }
+  \end{plainC}
+
+\end{frame}
+
+\begin{frame}[fragile]{What Does C Do?}
+
+Note: SSE has at least eight 128-bit registers known as XMM0 through XMM7.
+
+  \begin{ASM}
+        ## xmm2 = [9223372036854775807
+        ##        ,9223372036854775807]
+	movapd	LCPI0_0(%rip), %xmm2
+	andpd	%xmm2, %xmm0
+	andpd	%xmm2, %xmm1
+	addsd	%xmm1, %xmm0
+
+LCPI0_0:
+        ## 0x7fffffffffffffff
+	.quad	9223372036854775807
+        ## 0x7fffffffffffffff
+	.quad	9223372036854775807
+  \end{ASM}
 
 \end{frame}
 
@@ -328,7 +370,7 @@ Yes, this would be worthwhile and not difficult. See
 \end{frame}
 
 
-\begin{frame}[fragile]{What If We See \texttt{MO\_F32\_Fabs}?}
+\begin{frame}[fragile]{x86 DSL}
   \texttt{sse2NegCode :: Width -> CmmExpr -> NatM Register} does almost what we want so let's modify it
   \begin{haskelL}
     sse2FabsCode :: Width -> CmmExpr -> NatM InstrBlock
@@ -350,47 +392,83 @@ Yes, this would be worthwhile and not difficult. See
   \end{haskelL}
 \end{frame}
 
-\begin{frame}[fragile]{What If We See \texttt{MO\_F32\_Fabs}?}
+\begin{frame}[fragile]{Which generates\ldots}
 
   \begin{ASM}
     movss _n2ca(%rip),%xmm1
     andps %xmm1,%xmm0
+    ...
+    _n2ca:
+    .long 2147483647
   \end{ASM}
 \end{frame}
 
-% sse2NegCode :: Width -> CmmExpr -> NatM Register
-% sse2NegCode w x = do
-%   let fmt = floatFormat w
-%   x_code <- getAnyReg x
-%   -- This is how gcc does it, so it can't be that bad:
-%   let
-%     const = case fmt of
-%       FF32 -> CmmInt 0x80000000 W32
-%       FF64 -> CmmInt 0x8000000000000000 W64
-%   Amode amode amode_code <- memConstant (widthInBytes w) const
-%   tmp <- getNewRegNat fmt
-%   let
-%     code dst = x_code dst `appOL` amode_code `appOL` toOL [
-%         MOV fmt (OpAddr amode) (OpReg tmp),
-%         XOR fmt (OpReg tmp) (OpReg dst)
-%         ]
-%   return (Any fmt code)
-% \end{haskelL}
+\section{But What If It's Not x86?}
 
-% -- Compute an expression into *any* register, adding the appropriate
-% -- move instruction if necessary.
-% getAnyReg :: CmmExpr -> NatM (Reg -> InstrBlock)
-% getAnyReg expr = do
-%   r <- getRegister expr
-%   anyReg r
+\begin{frame}[fragile]{What About SPARC: C-- DSL}
 
-% What does C do?
-% Amend the AST
-% Generate the correct ASM
-% Generate the correct llvm (easy)
-% Generate C--
-% Someone else has fixed Solaris(?)
+  Need \texttt{./configure --enable-unregisterised}
 
-% https://stackoverflow.com/questions/44630015/how-would-fabsdouble-be-implemented-on-x86-is-it-an-expensive-operation
+  \begin{haskelL}
+genericFabsOp :: Width -> GenericOp
+genericFabsOp w [res_r] [aa]
+ = do dflags <- getDynFlags
+      let zero   = CmmLit (CmmFloat 0 w)
+          eq x y = CmmMachOp (MO_F_Eq w) [x, y]
+          gt x y = CmmMachOp (MO_F_Gt w) [x, y]
+          neg x  = CmmMachOp (MO_F_Neg w) [x]
+
+          g1 = catAGraphs [mkAssign (CmmLocal res_r) zero]
+          g2 = catAGraphs [mkAssign (CmmLocal res_r) aa]
+
+      res_t <- CmmLocal <$> newTemp (cmmExprType dflags aa)
+
+      let g3 = catAGraphs [mkAssign res_t aa,
+                           mkAssign (CmmLocal res_r)
+                                    (neg (CmmReg res_t))]
+
+      g4 <- mkCmmIfThenElse (gt aa zero) g2 g3
+      emit =<< mkCmmIfThenElse (eq aa zero) g1 g4
+\end{haskelL}
+\end{frame}
+
+\begin{frame}[fragile]{What About SPARC: C-- DSL}
+  \begin{plainC}
+          if (%MO_F_Eq_W32(_c1xB::F32,
+                           0.0 :: W32)) goto c1y5; else goto c1y4;
+      c1y5:
+          Hp = Hp - 16;
+          R1 = PicBaseReg + GHC.Float.rationalToFloat4_closure;
+          Sp = Sp - 16;
+          call (I64[R1])(R1) args: 24, res: 0, upd: 24;
+      c1y4:
+          if (%MO_F_Gt_W32(_c1xB::F32,
+                           0.0 :: W32)) goto c1y2; else goto c1xZ;
+      c1y2:
+          I64[Hp - 8] = PicBaseReg + GHC.Types.F#_con_info;
+          F32[Hp] = _c1xB::F32;
+          R1 = Hp - 7;
+          Sp = Sp - 16;
+          call (P64[Sp])(R1) args: 24, res: 0, upd: 24;
+      c1xZ:
+          I64[Hp - 8] = PicBaseReg + GHC.Types.F#_con_info;
+          F32[Hp] = %MO_F_Neg_W32(_c1xB::F32);
+          R1 = Hp - 7;
+          Sp = Sp - 16;
+          call (P64[Sp])(R1) args: 24, res: 0, upd: 24;
+   \end{plainC}
+\end{frame}
+
+\begin{frame}{Coda}
+
+  \begin{itemize}
+    \item Both harder and easier than expected
+    \item \#ghc and comments on trac / phabricator really helpful.
+    \item Jump in yourselves - it was fun
+    \item PPC backend improved by trommler
+    \item Both harder and easier than expected
+  \end{itemize}
+
+\end{frame}
 
 \end{document}

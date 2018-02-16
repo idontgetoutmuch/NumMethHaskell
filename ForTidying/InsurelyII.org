@@ -38,6 +38,9 @@ a specified price (aka the strike), on or before a specified date.
 **** Mathematically
 $$
 c = (x - k)^+
+$$
+
+$$
 p = (k - x)^+
 $$
 
@@ -168,7 +171,7 @@ bestOf (assets', startDate', endDate') =
 *** Some Examples
 
 #+BEGIN_SRC haskell :export code :session haskII
-cliquetDemo_v2
+cliquet
   ( name "Asset" -> asset
   , name "Global floor" -> gf
   , name "Global cap" -> gc
@@ -184,7 +187,29 @@ cliquetDemo_v2
     (_, perfs) = mapAccumL cliquet inDate dates
 #+END_SRC
 
+*** The \LaTeX
+
+$$
+\mathrm{pay}\Bigg(t^{{PD}},\min\Bigg({GC},\max\Bigg({GF},
+\sum_{i=1}^{\mathrm{len}(t^D)}\min\Bigg({LC},\frac{S^{TOP}(t_i^D)}{S^{TOP}(t_{i-1}^D)}\Bigg)
+\Bigg) \Bigg)\Bigg)
+$$
+
+\begin{center}
+\small
+\begin{tabular}{ l l l }
+\bf{Variable} & \bf{Description} & \bf{Type} \\
+$TOP$ & Top-level input & Tuple of $(S^{TOP}, GF, GC, LF, LC, t^{ID}, t^D, t^{PD})$ \\
+\quad S^{TOP} & Asset & Asset \\
+\quad GC & Global floor & Double \\
+\quad GF & Global cap   & Double \\
+\quad LC & Local floor  & Double \\
+\quad LF & Local cap    & Double \\
+\quad t^{ID} & Initial date & Date \\
+\quad t^D & Dates & List of Date \\
+\quad t^{PD} & Payment date & Date
+\end{tabular}
+\end{center}
+
 # As far as I can tell we need this for reftex but not for actual
 # citation production as long as we have an ok .bbl file.
-
-
