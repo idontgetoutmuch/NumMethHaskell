@@ -1,13 +1,16 @@
-{ nixpkgs ? import <nixpkgs> {}, compiler ? "ghc822", doBenchmark ? false }:
+{ nixpkgs ? import <nixpkgs> { overlays = [(self: super: {gsl = super.gsl.overrideAttrs (o: {CFLAGS = "-DDEBUG -O3";});})]; }
+, compiler ? "ghc822"
+, doBenchmark ? false }:
 
 let
 
   inherit (nixpkgs) pkgs;
 
 f = { mkDerivation, array, base, bytestring, cassava, containers
-    , datasets, diagrams-lib, diagrams-rasterific, ghc-prim, hmatrix
-    , inline-r, mtl, plots, random-fu, R, random-source
-    , stdenv, typelits-witnesses, vector }:
+    , datasets, diagrams-lib, diagrams-rasterific, foldl, Frames, ghc-prim, gsl
+    , hmatrix, hmatrix-gsl
+    , inline-r, lens, mtl, pipes, plots, random-fu, R, random-source
+    , stdenv, template-haskell, text, typelits-witnesses, vector, vinyl }:
 mkDerivation {
   pname = "variational";
   version = "0.1.0.0";
@@ -23,18 +26,27 @@ mkDerivation {
     datasets
     diagrams-lib
     diagrams-rasterific
+    foldl
+    Frames
     ghc-prim
     hmatrix
     inline-r
+    lens
     mtl
+    pipes
     plots
     random-fu
     random-source
+    template-haskell
+    text
     typelits-witnesses
     vector
+    vinyl
   ];
   executableSystemDepends = [
+    gsl
     R
+    pkgs.rPackages.anytime
     pkgs.rPackages.ggplot2
     pkgs.rPackages.maptools
     pkgs.rPackages.reshape2
