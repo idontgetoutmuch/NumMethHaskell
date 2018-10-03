@@ -27,7 +27,7 @@
 %format #>              = "\mathbin{\texttt{\#>}}"
 %format mu0             = "\mu_0"
 %format sigma0          = "\sigma_0"
-%format x0              = "x_0"
+%format mu              = "\mu"
 %format sigma           = "\sigma"
 %format xPrev           = "\boldsymbol{x}^\flat"
 %format bigQ            = "\boldsymbol{Q}"
@@ -38,6 +38,8 @@
 %format bigSigma0       = "\boldsymbol{\Sigma}_0"
 %format theta           = "\theta"
 %format forall          = "\forall"
+%format bigD            = "D"
+%format pi              = "\pi"
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -107,13 +109,24 @@
 \section{Introducing the Reverend Bayes}
 \end{frame}
 
-\begin{frame}{Game}
+\begin{frame}{Setting}
 
-  \begin{block}{Game}
+  \begin{block}{Samples}
     \begin{itemize}
-    \item I select a number at random from a normal distribution.
-    \item At time 1, I give you some information: the number with added noise.
-    \item At time 2, I give you more information: the same number but with different added noise.
+
+    \item I can sample from a normal distribution with the mean known
+    only to me and with a publicly known variance.
+
+    \item Based on your knowledge about me you have a (prior) belief
+    about the mean of this distribution: it's centred at 0 and is
+    probably between -3 and +3.
+
+    \item At time 1, I give you some information: a sample from my
+    distribution.
+
+    \item At time 2, I give you more information: another sample from
+    my distribution.
+
     \item And so on $\ldots$
     \end{itemize}
   \end{block}
@@ -123,25 +136,25 @@
 \begin{frame}{Bayes' Theorem}
 
   $$
-  \mathbb{P}(A \,\vert\, B) \triangleq \frac{\mathbb{P}(A \cap B)}{\mathbb{P}(B)}
+  \mathbb{P}(\theta \,\vert\, D) \triangleq \frac{\mathbb{P}(\theta \cap D)}{\mathbb{P}(D)}
   $$
 
   Also
 
   $$
-  \mathbb{P}(B \,\vert\, A) \triangleq \frac{\mathbb{P}(A \cap B)}{\mathbb{P}(A)}
+  \mathbb{P}(D \,\vert\, \theta) \triangleq \frac{\mathbb{P}(\theta \cap D)}{\mathbb{P}(\theta)}
   $$
 
   Thus
 
   $$
-  \mathbb{P}(A \,\vert\, B) \propto {\mathbb{P}(B \,\vert\, A)}{\mathbb{P}(A)}
+  \mathbb{P}(\theta \,\vert\, D) \propto {\mathbb{P}(D \,\vert\, \theta)}{\mathbb{P}(\theta)}
   $$
 
 \end{frame}
 
 
-\begin{frame}{Prior}
+\begin{frame}{An Application of Bayes' Theorem}
 
 %if style == newcode
 \begin{code}
@@ -155,21 +168,21 @@
 {-# OPTIONS_GHC -Wall                   #-}
 {-# OPTIONS_GHC -fno-warn-type-defaults #-}
 
-module Test ( kalmans'''
-            , kalmans''
+module Test ( -- kalmans'''
+              kalmans''
             , kalmans'
             , kalmans
             , m0X1
             , m1X1
-            , m2X1
+            -- , m2X1
             , muX1
             , m0Y1
             , m1Y1
             , muY1
             , marginal1X
             , marginal1Y
-            , varX1
-            , x0
+            -- , varX1
+            , mu
             , sigma
             , likelihood
             , ds
@@ -238,7 +251,65 @@ hist xs = fillBuilder (hb xs) xs
 \end{code}
 %endif
 
-I give you the prior $\mathbb{P}(\theta)$ (was $\mathbb{P}(A)$) as a \textit{histogram}
+I have told you that the data are drawn from
+
+$$
+\mathbb{P}(x \, \vert \, \mu) \propto \exp{-\frac{(x - \mu_0)^2}{2\sigma^2}}
+$$
+
+And, based on your knowledge about me, you have a prior
+
+$$
+\mathbb{P}(\mu) \propto \exp{-\frac{(\mu - \mu_0)^2}{2\sigma_0^2}}
+$$
+
+This gives
+
+$$
+\mathbb{P}(\mu \, \vert \, x) \propto
+\exp{-\frac{(x - \mu_0)^2}{2\sigma^2}} \times
+\exp{-\frac{(\mu - \mu_0)^2}{2\sigma_0^2}}
+$$
+
+\end{frame}
+
+\begin{frame}{An Application of Bayes' Theorem}
+
+\begin{align*}
+\mathbb{P}(\mu \, \vert \, x) & \propto
+\exp{-\frac{(x - \mu_0)^2}{2\sigma^2}} \times
+\exp{-\frac{(\mu - \mu_0)^2}{2\sigma_0^2}} \\
+ \onslide<2->{& = \exp{-[\frac{x^2 - 2\mu x + \mu^2}{2\sigma^2} +
+\frac{\mu^2 - 2\mu\mu_0 x + \mu_0^2}{2\sigma_0^2}]}} \\
+ \onslide<3->{& = \exp{-[\mu^2(\frac{1}{2\sigma^2} + \frac{1}{2\sigma_0^2}) -
+     2\mu(\frac{1}{2\sigma^2} + \frac{\mu_0}{2\sigma_0^2}) +
+     (\frac{x^2}{2\sigma^2} + \frac{\mu_0^2}{2\sigma_0^2})]}} \\
+\onslide<4->{&\triangleq \exp{-[\frac{1}{2\sigma_1^2}(\mu^2 -2\mu\mu_1 + \mu_1^2)]}}
+\end{align*}
+
+\end{frame}
+
+\begin{frame}{An Application of Bayes' Theorem}
+
+\begin{align*}
+\exp{-[\mu^2(\frac{1}{2\sigma^2} + \frac{1}{2\sigma_0^2}) -
+     2\mu(\frac{1}{2\sigma^2} + \frac{\mu_0}{2\sigma_0^2}) +
+     (\frac{x^2}{2\sigma^2} + \frac{\mu_0^2}{2\sigma_0^2})]} &\triangleq \\
+\exp{-[\frac{1}{2\sigma_1^2}(\mu^2 -2\mu\mu_1 + \mu_1^2)]} &
+\end{align*}
+
+Collecting together terms
+
+\begin{align*}
+\onslide<2->{\frac{1}{\sigma_1^2} = \frac{1}{\sigma_0^2} + \frac{1}{\sigma^2}} \\
+\onslide<3->{\frac{\mu_1}{\sigma_1^2} = \frac{\mu_0}{\sigma_0^2} + \frac{x}{\sigma^2}}
+\end{align*}
+
+\end{frame}
+
+\begin{frame}{Prior by Sampling}
+
+We can also represent the prior as a \textit{histogram}
 
 \begin{code}
 mu0, sigma0 :: Double
@@ -246,7 +317,7 @@ mu0 = 0.0
 sigma0 = 1.00
 
 priors :: Histogram BinD Double
-priors = hist $ runSampler (normal mu0 sigma0) 2 100000
+priors = hist $ runSampler (normal mu0 sigma0) 42 100000
 \end{code}
 
 \note{
@@ -266,27 +337,27 @@ you can see below it is not really normal.
 
 \begin{frame}{Secret, Model and Data}
 
-I sample my secret value
+But in reality the data come from a normal distribution with mean and (known) variance
 
 \begin{code}
-x0 :: Double
-x0 = 1.00
+mu :: Double
+mu = 1.00
+
+sigma :: Double
+sigma = 0.9
 \end{code}
 
 \pause
 
-I tell you the model aka the likelihood $\mathbb{P}(D \,\vert\,
-\theta)$ (was $\mathbb{P}(A \,\vert\, B)$)
+The function in Haskell for the likelihood $\mathbb{P}(x \,\vert\,
+\mu)$
 
 \begin{code}
-sigma :: Double
-sigma = 0.81
-
 likelihood :: Double -> Double -> Double
-likelihood bigD theta= n / d
+likelihood x mu = n / d
   where
-    n = exp (-(bigD - theta)^2 / (2 * sigma^2))
-    d = sqrt (2 * sigma^2)
+    n = exp (-(x - mu)^2 / (2 * sigma^2))
+    d = sqrt (2 * pi * sigma^2)
 \end{code}
 
 \pause
@@ -295,21 +366,22 @@ Finally I give you some noisy data
 
 \begin{code}
 ds :: [Double]
-ds = runSampler (normal x0 sigma) 2 10
+ds = runSampler (normal mu sigma) 2 10
 \end{code}
 
 \end{frame}
 
 \begin{frame}{Apply Bayes'}
 
-Now you can use Bayes' to determine my secret value
+Now you can use Bayes' to create a posterior
 
 \begin{code}
 posteriorize ::  Histogram BinD Double ->
                  Double ->
                  Histogram BinD Double
-posteriorize q d = H.bmap bayes q
+posteriorize h x = H.bmap bayes h
   where
+    bayes :: Double -> Double -> Double
     bayes theta p = p * likelihood d theta
 \end{code}
 
@@ -695,7 +767,7 @@ marginal1X, marginal1Y :: Histogram BinD Double
 marginal1X = H.reduceX H.sum test
 marginal1Y = H.reduceY H.sum test
 
-m0X1, m1X1, m2X1, muX1, varX1 :: Double
+m0X1, m1X1, {- m2X1, -} muX1 {- , varX1 -} :: Double
 m0X1 = H.sum marginal1X
 m1X1 = H.sum $ H.bmap (\f v -> v * f) marginal1X
 \end{code}
