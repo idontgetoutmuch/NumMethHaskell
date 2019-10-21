@@ -4,38 +4,6 @@
 
 > {-# OPTIONS_GHC -Wall #-}
 
-> {-# LANGUAGE DataKinds #-}
-> {-# LANGUAGE QuasiQuotes #-}
-> {-# LANGUAGE LambdaCase #-}
-> {-# LANGUAGE GADTs #-}
-> {-# LANGUAGE ScopedTypeVariables #-}
-> {-# LANGUAGE OverloadedStrings #-}
-> {-# LANGUAGE TypeOperators #-}
-
-> {-# LANGUAGE DataKinds #-}
-> {-# LANGUAGE KindSignatures #-}
-> {-# LANGUAGE TypeFamilies #-}
-> {-# LANGUAGE TypeOperators #-}
-> {-# LANGUAGE FlexibleInstances #-}
-> {-# LANGUAGE FlexibleContexts #-}
-> {-# LANGUAGE ScopedTypeVariables #-}
-> {-# LANGUAGE ConstraintKinds #-}
-> {-# LANGUAGE ExistentialQuantification #-}
-> {-# LANGUAGE RankNTypes #-}
-> {-# LANGUAGE PolyKinds #-}
-
-> {-# LANGUAGE DataKinds             #-}
-> {-# LANGUAGE TypeOperators         #-}
-> {-# LANGUAGE KindSignatures        #-}
-> {-# LANGUAGE GADTs                 #-}
-> {-# LANGUAGE Rank2Types            #-}
-> {-# LANGUAGE ScopedTypeVariables   #-}
-> {-# LANGUAGE MultiParamTypeClasses #-}
-> {-# LANGUAGE FlexibleInstances     #-}
-> {-# LANGUAGE TypeFamilies          #-}
-> {-# LANGUAGE UndecidableInstances  #-}
-> {-# LANGUAGE PolyKinds             #-}
-
 > import           Numeric.Sundials.ARKode.ODE
 > import           Numeric.LinearAlgebra
 > import           Data.Csv

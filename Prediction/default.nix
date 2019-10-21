@@ -1,6 +1,6 @@
-{ mkDerivation, base, Chart, Chart-diagrams, diagrams-cairo
-, diagrams-lib, diagrams-rasterific, hmatrix, hmatrix-sundials
-, Naperian, stdenv
+{ mkDerivation, base, cassava, Chart, Chart-diagrams
+, diagrams-cairo, diagrams-lib, diagrams-rasterific, hmatrix
+, hmatrix-sundials, Naperian, stdenv
 }:
 mkDerivation {
   pname = "Prediction";
@@ -9,7 +9,7 @@ mkDerivation {
   isLibrary = false;
   isExecutable = true;
   executableHaskellDepends = [
-    base Chart Chart-diagrams diagrams-cairo diagrams-lib
+    base cassava Chart Chart-diagrams diagrams-cairo diagrams-lib
     diagrams-rasterific hmatrix hmatrix-sundials Naperian
   ];
   license = stdenv.lib.licenses.bsd3;

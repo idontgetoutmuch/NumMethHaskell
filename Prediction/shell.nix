@@ -16,6 +16,8 @@ let
     hmatrix
     hmatrix-sundials
     Naperian
+    cassava
+    bytestring
   ];
 
 in

@@ -19,5 +19,6 @@ executable Prediction
                        diagrams-rasterific,
                        Naperian,
                        Chart,
-                       Chart-diagrams
+                       Chart-diagrams,
+                       cassava
   default-language:    Haskell2010
