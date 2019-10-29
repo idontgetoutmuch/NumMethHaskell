@@ -7,17 +7,16 @@ let
            rev = "9b6ec2b5fc509f74c5e61657dfc638a2c7ebced0";
   }) { sundials_arkode = pkgs.sundials; sundials_cvode = pkgs.sundials; };
 
+  Naperian = pkgs.haskellPackages.callCabal2nix "Naperian" (builtins.fetchGit {
+    url = "https://github.com/idontgetoutmuch/Naperian.git";
+    rev = "54d873ffe99de865ca34e6bb3b92736e29e01619";
+  }) { };
+
   haskellDeps = ps: with ps; [
-    Chart
-    Chart-diagrams
-    diagrams-cairo
-    diagrams-lib
-    diagrams-rasterific
     hmatrix
     hmatrix-sundials
     Naperian
-    cassava
-    bytestring
+    numbers
   ];
 
 in

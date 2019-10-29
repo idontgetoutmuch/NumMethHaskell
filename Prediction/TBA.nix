@@ -46,6 +46,11 @@ let
             url = "https://github.com/timbod7/haskell-chart";
             rev = "65606988864938f71ea79e3bc09872e7bab54f19";
           }) "--subpath chart-diagrams" { });
+
+        Naperian = hself.callCabal2nix "Naperian" (builtins.fetchGit {
+          url = "https://github.com/idontgetoutmuch/Naperian.git";
+          rev = "54d873ffe99de865ca34e6bb3b92736e29e01619";
+          }) { };
       };
     };
   };
@@ -72,6 +77,8 @@ let
     self.Chart
     self.Chart-diagrams
     self.Chart-cairo
+    self.Naperian
+    self.numbers
   ];
   }).passthru.ihaskellEnv;
 
