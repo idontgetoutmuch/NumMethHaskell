@@ -28,11 +28,6 @@ kx, ky :: Floating a => a
 kx = 0.5
 ky = 0.75
 
--- spatial mesh size
-nx, ny :: Int
-nx = 12
-ny = 24
-
 -- x mesh spacing
 -- y mesh spacing
 dx :: Floating a => a
@@ -45,22 +40,22 @@ c1, c2 :: Floating a => a
 c1 = kx/dx/dx
 c2 = ky/dy/dy
 
-cc5 :: forall a . Floating a => N.Hyper '[N.Vector 3, N.Vector 4, N.Vector 3, N.Vector 4] a
+cc5 :: forall a . Floating a => N.Hyper '[N.Vector 5, N.Vector 4, N.Vector 5, N.Vector 4] a
 cc5 = N.binary (*) (N.Scalar c2) cc4
 
 cc5Sym :: forall a . (Floating a, Eq a) =>
-          N.Hyper '[N.Vector 3, N.Vector 4, N.Vector 3, N.Vector 4] (Sym a)
+          N.Hyper '[N.Vector 5, N.Vector 4, N.Vector 5, N.Vector 4] (Sym a)
 cc5Sym = N.binary (*) (N.Scalar $ var "c2") cc4
 
-cc4 :: Num b => N.Hyper '[N.Vector 3, N.Vector 4, N.Vector 3, N.Vector 4] b
+cc4 :: Num b => N.Hyper '[N.Vector 5, N.Vector 4, N.Vector 5, N.Vector 4] b
 cc4 = N.Prism $ N.Prism $ N.Prism $ N.Prism $ N.Scalar $
       N.viota @4 <&> (\(N.Fin x) ->
-      N.viota @3 <&> (\(N.Fin w) ->
+      N.viota @5 <&> (\(N.Fin w) ->
       N.viota @4 <&> (\(N.Fin v) ->
-      N.viota @3 <&> (\(N.Fin u) ->
+      N.viota @5 <&> (\(N.Fin u) ->
       (f m n x w v u)))))
         where
-          m = 3
+          m = 5
           n = 4
           f m n i j k l | i == 0               = 0
                         | j == 0               = 0
@@ -71,23 +66,52 @@ cc4 = N.Prism $ N.Prism $ N.Prism $ N.Prism $ N.Scalar $
                         | k == i + 1 && l == j = 1
                         | otherwise            = 0
 
-yy5 :: Floating a => N.Hyper '[N.Vector 3, N.Vector 4, N.Vector 3, N.Vector 4] a
+cc4' :: forall b m n . (M.KnownNat m, M.KnownNat n, Num b) =>
+        N.Hyper '[N.Vector n, N.Vector m, N.Vector n, N.Vector m] b
+cc4' = N.Prism $ N.Prism $ N.Prism $ N.Prism $ N.Scalar $
+      N.viota @m <&> (\(N.Fin x) ->
+      N.viota @n <&> (\(N.Fin w) ->
+      N.viota @m <&> (\(N.Fin v) ->
+      N.viota @n <&> (\(N.Fin u) ->
+      (f m n x w v u)))))
+        where
+          m = fromIntegral $ M.natVal (undefined :: Proxy m)
+          n = fromIntegral $ M.natVal (undefined :: Proxy n)
+          f m n i j k l | i == 0               = 0
+                        | j == 0               = 0
+                        | i == n - 1           = 0
+                        | j == m - 1           = 0
+                        | k == i - 1 && l == j = 1
+                        | k == i     && l == j = -2
+                        | k == i + 1 && l == j = 1
+                        | otherwise            = 0
+
+cc5' :: forall a m n . (M.KnownNat m, M.KnownNat n, Floating a) =>
+        N.Hyper '[N.Vector n, N.Vector m, N.Vector n, N.Vector m] a
+cc5' = N.binary (*) (N.Scalar c2) cc4'
+
+cc5Sym' :: forall a m n . (M.KnownNat m, M.KnownNat n, Floating a, Eq a) =>
+          N.Hyper '[N.Vector n, N.Vector m, N.Vector n, N.Vector m] (Sym a)
+cc5Sym' = N.binary (*) (N.Scalar $ var "c2") cc4'
+
+yy5 :: Floating a => N.Hyper '[N.Vector 5, N.Vector 4, N.Vector 5, N.Vector 4] a
 yy5 = N.binary (*) (N.Scalar c1) yy4
 
 yy5Sym :: forall a . (Floating a, Eq a) =>
-          N.Hyper '[N.Vector 3, N.Vector 4, N.Vector 3, N.Vector 4] (Sym a)
+          N.Hyper '[N.Vector 5, N.Vector 4, N.Vector 5, N.Vector 4] (Sym a)
 yy5Sym = N.binary (*) (N.Scalar $ var "c1") yy4
 
-yy4 :: Num b => N.Hyper '[N.Vector 3, N.Vector 4, N.Vector 3, N.Vector 4] b
+yy4 :: forall b . Num b => N.Hyper '[N.Vector 5, N.Vector 4, N.Vector 5, N.Vector 4] b
 yy4 = N.Prism $ N.Prism $ N.Prism $ N.Prism $ N.Scalar $
       N.viota @4 <&> (\(N.Fin x) ->
-      N.viota @3 <&> (\(N.Fin w) ->
+      N.viota @5 <&> (\(N.Fin w) ->
       N.viota @4 <&> (\(N.Fin v) ->
-      N.viota @3 <&> (\(N.Fin u) ->
+      N.viota @5 <&> (\(N.Fin u) ->
       (f m n x w v u)))))
         where
-          m = 3
+          m = 5
           n = 4
+          f :: Int -> Int -> Int -> Int -> Int -> Int -> b
           f m n i j k l | i == 0                   = 0
                         | j == 0                   = 0
                         | i == n - 1               = 0
@@ -96,6 +120,53 @@ yy4 = N.Prism $ N.Prism $ N.Prism $ N.Prism $ N.Scalar $
                         | k == i     && l == j     = -2
                         | k == i     && l == j + 1 = 1
                         | otherwise                = 0
+
+yy4' :: forall b m n . (M.KnownNat m, M.KnownNat n, Num b) =>
+        N.Hyper '[N.Vector n, N.Vector m, N.Vector n, N.Vector m] b
+yy4' = N.Prism $ N.Prism $ N.Prism $ N.Prism $ N.Scalar $
+      N.viota @m <&> (\(N.Fin x) ->
+      N.viota @n <&> (\(N.Fin w) ->
+      N.viota @m <&> (\(N.Fin v) ->
+      N.viota @n <&> (\(N.Fin u) ->
+      (f m n x w v u)))))
+        where
+          m = fromIntegral $ M.natVal (undefined :: Proxy m)
+          n = fromIntegral $ M.natVal (undefined :: Proxy n)
+          f :: Int -> Int -> Int -> Int -> Int -> Int -> b
+          f m n i j k l | i == 0                   = 0
+                        | j == 0                   = 0
+                        | i == n - 1               = 0
+                        | j == m - 1               = 0
+                        | k == i     && l == j - 1 = 1
+                        | k == i     && l == j     = -2
+                        | k == i     && l == j + 1 = 1
+                        | otherwise                = 0
+
+yy5' :: forall a m n . (M.KnownNat m, M.KnownNat n, Floating a) =>
+        N.Hyper '[N.Vector n, N.Vector m, N.Vector n, N.Vector m] a
+yy5' = N.binary (*) (N.Scalar c1) yy4'
+
+yy5Sym' :: forall a m n . (M.KnownNat m, M.KnownNat n, Floating a, Eq a) =>
+           N.Hyper '[N.Vector n, N.Vector m, N.Vector n, N.Vector m] (Sym a)
+yy5Sym' = N.binary (*) (N.Scalar $ var "c1") yy4'
+
+-- spatial mesh size
+nx, ny :: Int
+nx = 30
+ny = 60
+
+bigA :: Matrix Double
+bigA = fromLists $
+       fmap (N.elements . N.Prism . N.Prism . N.Scalar) $
+       N.elements $ N.crystal $ N.crystal $ N.binary (+) cc5 yy5
+  where
+    cc5, yy5 :: N.Hyper '[N.Vector 30, N.Vector 60, N.Vector 30, N.Vector 60] Double
+    cc5 = cc5'
+    yy5 = yy5'
+
+b :: Vector Double
+b = fromList $
+    N.elements (h' :: N.Hyper '[N.Vector 30, N.Vector 60] Double)
 
 safeUpdate :: forall m n a . (M.KnownNat m, M.KnownNat n, Floating a, Show a) =>
                              N.Hyper '[N.Vector m, N.Vector n] a ->
@@ -282,6 +353,11 @@ initH = N.Prism $ N.Prism $ N.Scalar $
 
 sol :: Matrix Double
 sol = odeSolveV SDIRK_5_3_4' Nothing 1.0e-5 1.0e-10 (const (fromList . (update' nx ny) . toList)) (assoc (nx * ny) 0.0 [] :: Vector Double) (fromList ts)
+
+sol' :: Matrix Double
+sol' = odeSolveV SDIRK_5_3_4' Nothing 1.0e-5 1.0e-10 (const bigU') (assoc (nx * ny) 0.0 [] :: Vector Double) (fromList $ take 2 ts)
+  where
+    bigU' bigU = bigA #> bigU + b
 
 main = do
   putStrLn $ show sol
