@@ -1,4 +1,4 @@
-{ pkgs ? import <nixpkgs> {}, doBenchmark ? false }:
+{ pkgs ? import <nixpkgs> { overlays = [ ]; }, doBenchmark ? false }:
 
 let
 

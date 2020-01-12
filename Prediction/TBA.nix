@@ -4,7 +4,10 @@ let
       url = "https://github.com/gibiansky/IHaskell/tarball/bb2500c448c35ca79bddaac30b799d42947e8774";
       sha256 = "1n4yqxaf2xcnjfq0r1v7mzjhrizx7z5b2n6gj1kdk2yi37z672py";
     };
-    # nixpkgs = builtins.fetchTarball "https://github.com/NixOS/nixpkgs-channels/archive/nixos-19.09.tar.gz";
+    # nixpkgs = builtins.fetchTarball {
+    #   url = "https://github.com/NixOS/nixpkgs-channels/archive/nixos-19.09.tar.gz";
+    #   sha256 = "16wdsazc7g09ibcxlqsa3kblzhbbpdpb6s29llliybw73cp37b9s";
+    # };
     nixpkgs = builtins.fetchTarball {
       url = "https://github.com/NixOS/nixpkgs-channels/tarball/49dc8087a20e0d742d38be5f13333a03d171006a";
       sha256 = "1fdnqm4vyj50jb2ydcc0nldxwn6wm7qakxfhmpf72pz2y2ld55i6";

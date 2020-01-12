@@ -10,6 +10,7 @@
 
 import Data.Maybe
 import Data.Number.Symbolic
+import qualified Data.Number.Symbolic as Sym
 import Data.Proxy
 
 import qualified Naperian as N
@@ -23,6 +24,7 @@ import           Numeric.Sundials.ARKode.ODE
 import           Numeric.LinearAlgebra
 
 import Debug.Trace
+
 
 kx, ky :: Floating a => a
 kx = 0.5
@@ -355,9 +357,11 @@ sol :: Matrix Double
 sol = odeSolveV SDIRK_5_3_4' Nothing 1.0e-5 1.0e-10 (const (fromList . (update' nx ny) . toList)) (assoc (nx * ny) 0.0 [] :: Vector Double) (fromList ts)
 
 sol' :: Matrix Double
-sol' = odeSolveV SDIRK_5_3_4' Nothing 1.0e-5 1.0e-10 (const bigU') (assoc (nx * ny) 0.0 [] :: Vector Double) (fromList $ take 2 ts)
+sol' = odeSolveV SDIRK_5_3_4' Nothing 1.0e-5 1.0e-10 (const bigU') (assoc (nx * ny) 0.0 [] :: Vector Double) (fromList $ ts)
   where
     bigU' bigU = bigA #> bigU + b
 
 main = do
-  putStrLn $ show sol
+  mapM_ (\i -> putStrLn $ show $ sqrt $ (sol'!i) <.> (sol'!i) / (fromIntegral nx) / (fromIntegral ny)) ([0 .. length ts - 1] :: [Int])
+
+-- https://serokell.io/blog/dimensions-haskell-singletons

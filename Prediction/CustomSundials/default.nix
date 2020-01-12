@@ -15,15 +15,28 @@ let liblapackShared = liblapack.override {
 
 in stdenv.mkDerivation rec {
   pname = "sundials";
-  version = "5.0.0-dev.2";
+  version = "5.0.0";
 
   buildInputs = [ python openmpi openmp ] ++ stdenv.lib.optionals (lapackSupport) [ gfortran ];
   nativeBuildInputs = [ cmake openmpi openmp ];
 
   src = fetchurl {
     url = "https://computing.llnl.gov/projects/${pname}/download/${pname}-${version}.tar.gz";
-    sha256 = "13hz8n8091kb0jdh6x18jsdv6fsv6akrsiv5ya1s991jc19vdq7y";
+    sha256 = "1lvx5pddjxgyr8kqlira36kxckz7nxwc8xilzfyx0hf607n42l9l";
   };
+
+  patches = [
+    (fetchurl {
+      # https://github.com/LLNL/sundials/pull/19
+      url = "https://github.com/LLNL/sundials/commit/1350421eab6c5ab479de5eccf6af2dcad1eddf30.patch";
+      sha256 = "0g67lixp9m85fqpb9rzz1hl1z8ibdg0ldwq5z6flj5zl8a7cw52l";
+    })
+    (fetchurl {
+      # https://github.com/LLNL/sundials/pull/20
+      url = "https://github.com/LLNL/sundials/pull/20/commits/2d951bbe1ff7842fcd0dafa28c61b0aa94015f66.patch";
+      sha256 = "0lcr6m4lk14yqrxah4rdscpczny5l7m1zpfsjh8bgspadfsgk512";
+    })
+  ];
 
   cmakeFlags = [
     "-DEXAMPLES_INSTALL_PATH=${placeholder "out"}/share/examples"
