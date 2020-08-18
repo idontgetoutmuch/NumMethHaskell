@@ -37,6 +37,7 @@ $$
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE NumDecimals #-}
 
 module Tribbles where
 
@@ -56,6 +57,60 @@ import           GHC.Int
 
 import Control.Monad.Writer
 import Control.Monad.Loops
+\end{code}
+
+\begin{code}
+bigN :: Int
+bigN = 5
+
+bigA :: Matrix Double
+bigA = assoc (bigN, bigN) 0.0 [ ((i, j), f (i, j)) | i <- [0 .. bigN P.- 1]
+                                                   , j <- [0 .. bigN P.- 1]
+                        ]
+ where
+   f (i, j) | i       P.== j          = -1
+            | i P.- 1 P.== j          =  1
+            | otherwise               =  0
+
+defaultOpts :: method -> ODEOpts method
+defaultOpts method = ODEOpts
+  { maxNumSteps = 1e5
+  , minStep     = 1.0e-14
+  , fixedStep   = 0
+  , maxFail     = 10
+  , odeMethod   = method
+  , initStep    = Nothing
+  , jacobianRepr = SparseJacobian
+                 $ SparsePattern
+                 $ cmap (fromIntegral :: I -> Int8)
+                 $ cmap (\x -> case x of 0 -> 0; _ -> 1)
+                 $ flatten
+                 $ toInt bigA
+  }
+
+instance Element Int8
+
+emptyOdeProblem :: OdeProblem
+emptyOdeProblem = OdeProblem
+      { odeRhs = error "emptyOdeProblem: no odeRhs provided"
+      , odeJacobian = Nothing
+      , odeInitCond = error "emptyOdeProblem: no odeInitCond provided"
+      , odeEvents = mempty
+      , odeTimeBasedEvents = TimeEventSpec $ return $ undefined -- 1.0 / 0.0
+      , odeEventHandler = nilEventHandler
+      , odeMaxEvents = 100
+      , odeSolTimes = error "emptyOdeProblem: no odeSolTimes provided"
+      , odeTolerances = defaultTolerances
+      }
+
+nilEventHandler :: EventHandler
+nilEventHandler _ _ _ = throwIO $ ErrorCall "nilEventHandler"
+
+defaultTolerances :: Tolerances
+defaultTolerances = Tolerances
+  { absTolerances = Left 1.0e-5
+  , relTolerance = 1.0e-10
+  }
 \end{code}
 
 \section{Age-Dependent Populations}
