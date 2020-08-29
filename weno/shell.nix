@@ -65,13 +65,23 @@ inherit (pkgs) myHaskellPackages;
 
 haskellDeps = ps: with ps; [
   base
+  cassava
   dimensional
   integration
   monad-loops
   hmatrix-sundials1
+  numbers
+  Naperian
 ];
 
 ghc = myHaskellPackages.ghcWithPackages haskellDeps;
+
+my-python-packages = python-packages: with python-packages; [
+  numpy
+  matplotlib
+  ];
+
+python-with-my-packages = pkgs.python3.withPackages my-python-packages;
 
 nixPackages = [
   ghc
@@ -85,6 +95,8 @@ in
 pkgs.mkShell {
   buildInputs = [
     nixPackages
+    python-with-my-packages
+    # pkgs.sage
   ];
   MYVARIABLE = "hi";
 }
