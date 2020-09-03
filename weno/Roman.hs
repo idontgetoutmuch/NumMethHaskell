@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE OverloadedStrings   #-}
 
 {-# OPTIONS_GHC -Wall            #-}
 
@@ -18,12 +19,14 @@ import           Data.ByteString.Lazy (putStr, writeFile)
 import           Prelude hiding (putStr, writeFile)
 import           Control.Exception
 import           Data.Coerce
+import           Katip
+import           System.IO (stdout)
 import           Katip.Monadic
 import           GHC.Int
 
 
 bigN :: Int
-bigN = 201
+bigN = 101
 
 deltaX :: Double
 deltaX = 1.0 / (fromIntegral bigN - 1)
@@ -61,9 +64,31 @@ sol' = do
     Left e  -> error $ show e
     Right y -> return (solutionMatrix y)
 
+sol'' :: IO (Matrix Double)
+sol'' = do
+  -- w <- runNoLoggingT $ solve (defaultOpts' HEUN_EULER_2_1_2) burgersWeno
+  handleScribe <- mkHandleScribe ColorIfTerminal stdout (permitItem InfoS) V2
+  logEnv <- registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "namespace" "devel"
+  w <- runKatipT logEnv $ solve (defaultOpts' BOGACKI_SHAMPINE_4_2_3) burgersWeno
+  case w of
+    Left e  -> error $ show e
+    Right y -> return (solutionMatrix y)
+
 burgers :: OdeProblem
 burgers = emptyOdeProblem
   { odeRhs = odeRhsPure $ \_t x -> coerce (cmap negate ((bigD #> (coerce x)) * (bigC #> (coerce x))))
+  , odeJacobian = Nothing
+  , odeEvents = mempty
+  , odeEventHandler = nilEventHandler
+  , odeMaxEvents = 0
+  , odeInitCond = bigV
+  , odeSolTimes = vector $ map (0.025 *) [0 .. 10]
+  , odeTolerances = defaultTolerances
+  }
+
+burgersWeno :: OdeProblem
+burgersWeno = emptyOdeProblem
+  { odeRhs = odeRhsPure $ \_t x -> coerce (rhs'' bigN (coerce x))
   , odeJacobian = Nothing
   , odeEvents = mempty
   , odeEventHandler = nilEventHandler
@@ -120,15 +145,18 @@ wcR v1 v2 v3 v4 v5 = f
     f = (w1*q1 + w2*q2 + w3*q3)
 
 crwenoR :: Int -> Vector Double -> Vector Double
-crwenoR n u = assoc (n + 1) 0.0 [(i, f i) | i <- [1 .. n]]
+crwenoR n u = assoc (n + 1) 0.0 [(i, f i) | i <- [0 .. n]]
   where
-    f i | i == 1 = wcR v1 v2 v3 v4 v5
+    f i | i == 0    = 0.0
+
+    f i | i == 1    = wcR v1 v2 v3 v4 v5
       where
         v1 = u!(n-1)
         v2 = u!(i-1)
         v3 = u!i
         v4 = u!(i+1)
         v5 = u!(i+2)
+
     f i | i == n - 1 = wcR v1 v2 v3 v4 v5
       where
         v1 = u!(i-2)
@@ -136,14 +164,16 @@ crwenoR n u = assoc (n + 1) 0.0 [(i, f i) | i <- [1 .. n]]
         v3 = u!i
         v4 = u!(i+1)
         v5 = u!1
-    f i | i == n = wcR v1 v2 v3 v4 v5
+
+    f i | i == n     = wcR v1 v2 v3 v4 v5
       where
         v1 = u!(i-2)
         v2 = u!(i-1)
         v3 = u!i
         v4 = u!1
         v5 = u!2
-    f i | otherwise = wcR v1 v2 v3 v4 v5
+
+    f i | otherwise  = wcR v1 v2 v3 v4 v5
       where
         v1 = u!(i-2)
         v2 = u!(i-1)
@@ -152,7 +182,7 @@ crwenoR n u = assoc (n + 1) 0.0 [(i, f i) | i <- [1 .. n]]
         v5 = u!(i+2)
 
 crwenoL :: Int -> Vector Double -> Vector Double
-crwenoL n u = assoc (n + 1) 0.0 [(i, f i) | i <- [0 .. n - 1]]
+crwenoL n u = assoc (n + 1) 0.0 [(i, f i) | i <- [0 .. n]]
   where
     f i | i == 0 = wcL v1 v2 v3 v4 v5
       where
@@ -176,9 +206,11 @@ crwenoL n u = assoc (n + 1) 0.0 [(i, f i) | i <- [0 .. n - 1]]
         v2 = u!(i-1)
         v3 = u!i
         v4 = u!(i+1)
-        v5 = u!2
+        v5 = u!1
 
-    f i | otherwise = wcL v1 v2 v3 v4 v5
+    f i | i == n     = 0.0
+
+    f i | otherwise  = wcL v1 v2 v3 v4 v5
       where
         v1 = u!(i-2)
         v2 = u!(i-1)
@@ -197,6 +229,57 @@ mLR n = assoc (n, n) 0.0 [ ((i, j), f (i, j)) | i <- [0 .. n - 1]
                j == n - 1 = -1
              | i == j     =  1
              | i - 1 == j = -1
+             | otherwise  =  0
+
+mL :: Int -> Matrix Double
+mL n = assoc (n, n + 1) 0.0 [ ((i, j), f (i, j)) | i <- [0 .. n - 1]
+                                                 , j <- [0 .. n]
+                                                 ]
+  where
+    f (i, j) | i == 0 &&
+               j == 0     =  1
+             | i == 0 &&
+               j == n - 1 = -1
+             | i == j     =  1
+             | i - 1 == j = -1
+             | otherwise  =  0
+
+mR :: Int -> Matrix Double
+mR n = assoc (n, n + 1) 0.0 [ ((i, j), f (i, j)) | i <- [0 .. n - 1]
+                                                 , j <- [0 .. n]
+                                                 ]
+  where
+    f (i, j) | i == 0 &&
+               j == 0     =  0
+             | i == 0 &&
+               j == 1     =  1
+             | i == 0 &&
+               j == n     = -1
+             | i == j     = -1
+             | i + 1 == j =  1
+             | otherwise  =  0
+
+mR' :: Int -> Matrix Double
+mR' n = assoc (n, n + 1) 0.0 [ ((i, j), f (i, j)) | i <- [0 .. n - 1]
+                                                  , j <- [0 .. n - 1]
+                                                  ]
+  where
+    f (i, j) | i == 0 &&
+               j == 0     =  1
+             | i == 0 &&
+               j == n - 1 = -1
+             | i == j     =  1
+             | i - 1 == j = -1
+             | otherwise  =  0
+
+rhs'' :: Int -> Vector Double -> Vector Double
+rhs'' n v = assoc n 0.0 [(i, f i) | i <- [0 .. n - 1]]
+  where
+    ll = (mL n) #> (crwenoL n (vjoin [v, vector [0.0]]))
+    rr = (mR n) #> (crwenoR n (vjoin [vector [0.0], v]))
+
+    f i | v!i >= 0.0 = negate (v!i * ll!i) / deltaX
+        | otherwise  = negate (v!i * rr!i) / deltaX
 
 rhs :: Int -> Vector Double -> Vector Double
 rhs n u = assoc n 0.0 [(i, f i) | i <- [0 .. n - 1]]
@@ -215,15 +298,17 @@ myOptions = defaultEncodeOptions {
 
 main :: IO ()
 main = do
-  y <- sol'
-  writeFile "burgers.txt" $ encodeWith myOptions $ map toList $ toRows y
+  -- y <- sol'
+  -- writeFile "burgers.txt" $ encodeWith myOptions $ map toList $ toRows y
+  y <- sol''
+  writeFile "burgersWeno.txt" $ encodeWith myOptions $ map toList $ toRows y
 
 
 defaultOpts' :: method -> ODEOpts method
 defaultOpts' method = ODEOpts
   { maxNumSteps = 1e5
   , minStep     = 1.0e-14
-  , fixedStep   = 0
+  , fixedStep   = 0.001
   , maxFail     = 10
   , odeMethod   = method
   , initStep    = Nothing
