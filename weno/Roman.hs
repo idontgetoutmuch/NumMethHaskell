@@ -26,10 +26,14 @@ import           GHC.Int
 
 
 bigN :: Int
-bigN = 101
+-- bigN = 101
+bigN = 200
 
 deltaX :: Double
 deltaX = 1.0 / (fromIntegral bigN - 1)
+
+deltaX' :: Double
+deltaX' = 1.0 / (fromIntegral bigN)
 
 bigC :: Matrix Double
 bigC = assoc (bigN, bigN) 0.0 [ ((i, j), (1/(2*deltaX)) * f (i, j)) | i <- [0 .. bigN - 1]
@@ -56,6 +60,11 @@ bigV :: Vector Double
 bigV = assoc bigN 0.0 [(i, f i) | i <- [0 .. bigN - 1]]
   where
   f i = (sin (2 * pi * fromIntegral i * deltaX))
+
+bigV' :: Vector Double
+bigV' = assoc (bigN + 1) 0.0 [(i, f i) | i <- [0 .. bigN]]
+  where
+  f i = (sin (2 * pi * fromIntegral i * deltaX'))
 
 sol' :: IO (Matrix Double)
 sol' = do
@@ -88,12 +97,12 @@ burgers = emptyOdeProblem
 
 burgersWeno :: OdeProblem
 burgersWeno = emptyOdeProblem
-  { odeRhs = odeRhsPure $ \_t x -> coerce (rhs'' bigN (coerce x))
+  { odeRhs = odeRhsPure $ \_t x -> coerce (rhs' bigN (coerce x))
   , odeJacobian = Nothing
   , odeEvents = mempty
   , odeEventHandler = nilEventHandler
   , odeMaxEvents = 0
-  , odeInitCond = bigV
+  , odeInitCond = bigV'
   , odeSolTimes = vector $ map (0.025 *) [0 .. 10]
   , odeTolerances = defaultTolerances
   }
@@ -259,18 +268,17 @@ mR n = assoc (n, n + 1) 0.0 [ ((i, j), f (i, j)) | i <- [0 .. n - 1]
              | i + 1 == j =  1
              | otherwise  =  0
 
-mR' :: Int -> Matrix Double
-mR' n = assoc (n, n + 1) 0.0 [ ((i, j), f (i, j)) | i <- [0 .. n - 1]
-                                                  , j <- [0 .. n - 1]
-                                                  ]
+preRhs :: Int -> Vector Double -> Vector Double
+preRhs n v = assoc n 0.0 [(i, f i) | i <- [0 .. n - 1]]
   where
-    f (i, j) | i == 0 &&
-               j == 0     =  1
-             | i == 0 &&
-               j == n - 1 = -1
-             | i == j     =  1
-             | i - 1 == j = -1
-             | otherwise  =  0
+    ll = (mL n) #> (crwenoL n v)
+    rr = (mR n) #> (crwenoR n v)
+
+    f i | v!i >= 0.0 = negate (v!i * ll!i) / deltaX'
+        | otherwise  = negate (v!i * rr!i) / deltaX'
+
+rhs' :: Int -> Vector Double -> Vector Double
+rhs' n v = vjoin [preRhs n v, [v!0]]
 
 rhs'' :: Int -> Vector Double -> Vector Double
 rhs'' n v = assoc n 0.0 [(i, f i) | i <- [0 .. n - 1]]
@@ -308,7 +316,7 @@ defaultOpts' :: method -> ODEOpts method
 defaultOpts' method = ODEOpts
   { maxNumSteps = 1e5
   , minStep     = 1.0e-14
-  , fixedStep   = 0.001
+  , fixedStep   = 0.0 -- 0.001
   , maxFail     = 10
   , odeMethod   = method
   , initStep    = Nothing
