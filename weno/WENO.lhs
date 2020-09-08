@@ -1,12 +1,20 @@
 \documentclass{article}
 \usepackage{amsmath}
+\usepackage{graphicx}
 %include polycode.fmt
+%options ghci
 
 \begin{document}
 
 \section{Introduction}
 
-\section{An Incorrect Method}
+When I ran the London Marathon (never again) I was surprised to find I
+ couldn't even start to run for about 20 minutes because of the
+ density of all the participants.
+
+\section{Some Incorrect Methods}
+
+\subsection{Diffusion?}
 
 $$
 u_{t}+a u_{x}=0 \quad \text { for } x \in \mathbb{R}, t \geq 0
@@ -31,24 +39,8 @@ A=\frac{a}{h}\left(\begin{array}{ccccc}
 $$
 
 
-$$
-V(x) \triangleq \int_{-\infty}^{x} v(\xi) d \xi
-$$
 
-$$
-\begin{aligned}
-\frac{1}{\Delta x_{j}} \int_{x_{j-\frac{1}{2}}}^{x_{j+\frac{1}{2}}} p(\xi) d \xi &=\frac{1}{\Delta x_{j}} \int_{x_{j-\frac{1}{2}}}^{x_{j+\frac{1}{2}}} P^{\prime}(\xi) d \xi=\frac{1}{\Delta x_{j}}\left(P\left(x_{j+\frac{1}{2}}\right)-P\left(x_{j-\frac{1}{2}}\right)\right) \\
-&=\frac{1}{\Delta x_{j}}\left(V\left(x_{j+\frac{1}{2}}\right)-V\left(x_{j-\frac{1}{2}}\right)\right) \\
-&=\frac{1}{\Delta x_{j}}\left(\int_{-\infty}^{x_{j+\frac{1}{2}}} v(\xi) d \xi-\int_{-\infty}^{x_{j-\frac{1}{2}}} v(\xi) d \xi\right) \\
-&=\frac{1}{\Delta x_{j}} \int_{x_{j-\frac{1}{2}}}^{x_{j+\frac{1}{2}}} v(\xi) d \xi=\bar{v}_{j}, \quad j=i-r, \ldots, i+s
-\end{aligned}
-$$
-
-$$
-u(x, 0)=(\sin (\pi x))^{100}
-$$
-
-
+%if False
 \begin{code}
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -76,9 +68,12 @@ import           Data.Csv
 import           Data.Char
 import qualified Data.ByteString.Lazy as BL
 
-import Control.Monad.Writer
-import Control.Monad.Loops
+import           Control.Monad.Writer
+import           Control.Monad.Loops
+
+import           Data.Ratio
 \end{code}
+%endif
 
 \begin{code}
 bigN :: Int
@@ -146,6 +141,68 @@ simpleAdvect = emptyOdeProblem
   , odeTolerances = defaultTolerances
   }
 
+sol :: IO (Matrix Double)
+sol = do
+  x <- runNoLoggingT $ solve (defaultOpts SDIRK_5_3_4) simpleAdvect
+  case x of
+    Left e  -> error $ show e
+    Right y -> return (solutionMatrix y)
+\end{code}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{heat1e000.png}
+\caption{Caption}
+\label{fig:incorrect_0}
+\end{figure}
+
+\subsection{Oscillations}
+
+$$
+\frac{u_{i}^{(n+1)}-u_{i}^{(n)}}{\Delta t}+u_{i}^{(n)} \frac{u_{i+1}^{(n)}-u_{i-1}^{(n)}}{2 \Delta x}=0
+$$
+
+$$
+V(x) \triangleq \int_{-\infty}^{x} v(\xi) d \xi
+$$
+
+$$
+\begin{aligned}
+\frac{1}{\Delta x_{j}} \int_{x_{j-\frac{1}{2}}}^{x_{j+\frac{1}{2}}} p(\xi) d \xi &=\frac{1}{\Delta x_{j}} \int_{x_{j-\frac{1}{2}}}^{x_{j+\frac{1}{2}}} P^{\prime}(\xi) d \xi=\frac{1}{\Delta x_{j}}\left(P\left(x_{j+\frac{1}{2}}\right)-P\left(x_{j-\frac{1}{2}}\right)\right) \\
+&=\frac{1}{\Delta x_{j}}\left(V\left(x_{j+\frac{1}{2}}\right)-V\left(x_{j-\frac{1}{2}}\right)\right) \\
+&=\frac{1}{\Delta x_{j}}\left(\int_{-\infty}^{x_{j+\frac{1}{2}}} v(\xi) d \xi-\int_{-\infty}^{x_{j-\frac{1}{2}}} v(\xi) d \xi\right) \\
+&=\frac{1}{\Delta x_{j}} \int_{x_{j-\frac{1}{2}}}^{x_{j+\frac{1}{2}}} v(\xi) d \xi=\bar{v}_{j}, \quad j=i-r, \ldots, i+s
+\end{aligned}
+$$
+
+$$
+C_{r j}=
+\sum_{m=j+1}^{k}
+\frac{\sum_{l=0 \atop l \neq m}^{k} \prod_{q=0 \atop q \neq m, l}^{k}(r-q+1)}
+     {\prod_{l=0 \atop l \neq m}^{k}(m-l)}
+$$
+
+\begin{code}
+
+coeff :: Integral a => Ratio a -> Ratio a -> Ratio a -> Ratio a
+coeff k r j = sum [ num m / den m | m <- [j + 1 .. k] ]
+  where
+    den m = product [ m - l | l <- [0 .. k], l /= m]
+    num m = sum [ product [ r - q + 1 | q <- [0 .. k], q /= l, q /= m]
+                | l <- [0 .. k], l /= m ]
+
+coeffs k = [ coeff k r j | r <- [-1 .. k - 1], j <- [0 .. k - 1] ]
+\end{code}
+
+Here is the eval:
+\eval{coeffs 3}
+
+$$
+u(x, 0)=(\sin (\pi x))^{100}
+$$
+
+
+\begin{code}
 burgers :: OdeProblem
 burgers = emptyOdeProblem
   { odeRhs = odeRhsPure $ \_t x -> coerce (bigB #> (coerce x))
@@ -162,13 +219,6 @@ myOptions :: EncodeOptions
 myOptions = defaultEncodeOptions {
       encDelimiter = fromIntegral (ord ' ')
     }
-
-sol :: IO (Matrix Double)
-sol = do
-  x <- runNoLoggingT $ solve (defaultOpts SDIRK_5_3_4) simpleAdvect
-  case x of
-    Left e  -> error $ show e
-    Right y -> return (solutionMatrix y)
 
 main :: IO ()
 main = do

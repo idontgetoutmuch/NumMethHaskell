@@ -1,27 +1,39 @@
 { stdenv
 , cmake
 , fetchurl
-, llvmPackages
 , python
-, liblapack
+, blas
+, lapack
 , gfortran
 , suitesparse
-, lapackSupport ? true }:
+, lapackSupport ? true
+, kluSupport ? true }:
 
-let liblapackShared = liblapack.override {
-  shared = true;
-};
+assert (!blas.isILP64) && (!lapack.isILP64);
 
-in stdenv.mkDerivation rec {
+stdenv.mkDerivation rec {
   pname = "sundials";
-  version = "5.0.0";
+  version = "5.3.0";
 
-  buildInputs = stdenv.lib.optionals (lapackSupport) [ gfortran ];
-  nativeBuildInputs =  [ cmake ];
+  buildInputs = [
+    python
+  ] ++ stdenv.lib.optionals (lapackSupport) [
+    gfortran
+    blas
+    lapack
+  ] 
+  # KLU support is based on Suitesparse.
+  # It is tested upstream according to the section 1.1.4 of
+  # [INSTALL_GUIDE.pdf](https://raw.githubusercontent.com/LLNL/sundials/master/INSTALL_GUIDE.pdf)
+  ++ stdenv.lib.optionals (kluSupport) [
+    suitesparse
+  ];
+
+  nativeBuildInputs = [ cmake ];
 
   src = fetchurl {
-    url = "https://computing.llnl.gov/projects/${pname}/download/${pname}-${version}.tar.gz";
-    sha256 = "1lvx5pddjxgyr8kqlira36kxckz7nxwc8xilzfyx0hf607n42l9l";
+    url = "https://computation.llnl.gov/projects/${pname}/download/${pname}-${version}.tar.gz";
+    sha256 = "19xwi7pz35s2nqgldm6r0jl2k0bs36zhbpnmmzc56s1n3bhzgpw8";
   };
 
   patches = [
@@ -35,36 +47,21 @@ in stdenv.mkDerivation rec {
   cmakeFlags = [
     "-DEXAMPLES_INSTALL_PATH=${placeholder "out"}/share/examples"
   ] ++ stdenv.lib.optionals (lapackSupport) [
-
-    "-DSUNDIALS_INDEX_SIZE=64"
-
-    "-DBUILD_SHARED_LIBS=OFF"
-    "-DBUILD_STATIC_LIBS=ON"
-
-    "-DBUILD_CVODE=ON"
-    "-DBUILD_CVODES=OFF"
-    "-DBUILD_IDA=OFF"
-    "-DBUILD_IDAS=OFF"
-    "-DBUILD_ARKODE=ON"
-    "-DBUILD_KINSOL=OFF"
-    "-DBUILD_TESTING=ON"
-    "-DEXAMPLES_ENABLE_C=OFF"
-    "-DEXAMPLES_ENABLE_CXX=OFF"
-    "-DEXAMPLES_INSTALL=OFF"
-
-    "-DKLU_ENABLE=ON"
-    "-DKLU_INCLUDE_DIR=${suitesparse}/include"
-    "-DKLU_LIBRARY_DIR=${suitesparse}/lib"
-
+    "-DSUNDIALS_INDEX_TYPE=int32_t"
     "-DLAPACK_ENABLE=ON"
-    "-DLAPACK_LIBRARIES=${liblapackShared}/lib/liblapack${stdenv.hostPlatform.extensions.sharedLibrary};${liblapackShared}/lib/libblas${stdenv.hostPlatform.extensions.sharedLibrary}"
+    "-DLAPACK_LIBRARIES=${lapack}/lib/liblapack${stdenv.hostPlatform.extensions.sharedLibrary}"
+  ] ++ stdenv.lib.optionals (kluSupport) [
+    "-DKLU_ENABLE=ON"
+    "-DKLU_INCLUDE_DIR=${suitesparse.dev}/include"
+    "-DKLU_LIBRARY_DIR=${suitesparse}/lib"
   ];
 
-  doCheck = false;
+  doCheck = true;
+  checkPhase = "make test";
 
   meta = with stdenv.lib; {
     description = "Suite of nonlinear differential/algebraic equation solvers";
-    homepage    = https://computation.llnl.gov/projects/sundials;
+    homepage    = "https://computation.llnl.gov/projects/sundials";
     platforms   = platforms.all;
     maintainers = with maintainers; [ flokli idontgetoutmuch ];
     license     = licenses.bsd3;

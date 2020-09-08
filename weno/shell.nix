@@ -15,29 +15,29 @@ myHaskellPackageOverlay = self: super: {
           in
             super.haskell.lib.dontCheck tg;
 
-      # BlogLiterately1 =
-      #   let newBlogLiteratelySrc = builtins.fetchTarball { url = "https://hackage.haskell.org/package/BlogLiterately-0.8.7/BlogLiterately-0.8.7.tar.gz";
-      #     sha256 = "10x5c3qn36fw50s0pgimxa4yhpbnx38bnqn5071wnyfh2z61clyn";
-      #     };
-      #       bl = hself.callCabal2nix "BlogLiterately" newBlogLiteratelySrc {};
-      #     in
-      #       super.haskell.lib.doJailbreak (super.haskell.lib.dontCheck bl);
+      BlogLiterately1 =
+        let newBlogLiteratelySrc = builtins.fetchTarball { url = "https://hackage.haskell.org/package/BlogLiterately-0.8.7/BlogLiterately-0.8.7.tar.gz";
+          sha256 = "10x5c3qn36fw50s0pgimxa4yhpbnx38bnqn5071wnyfh2z61clyn";
+          };
+            bl = hself.callCabal2nix "BlogLiterately" newBlogLiteratelySrc {};
+          in
+            super.haskell.lib.doJailbreak (super.haskell.lib.dontCheck bl);
 
-      # haxr =
-      #   let newHaxrSrc = builtins.fetchTarball { url = "https://hackage.haskell.org/package/haxr-3000.11.4.1/haxr-3000.11.4.1.tar.gz";
-      #     sha256 = "1mm83k75zdnbx440zczk60ii4nkzll6dyhl3fzj1c4idb37r801r";
-      #     };
-      #       hr = hself.callCabal2nix "haxr" newHaxrSrc {};
-      #     in
-      #       super.haskell.lib.dontCheck hr;
+      haxr =
+        let newHaxrSrc = builtins.fetchTarball { url = "https://hackage.haskell.org/package/haxr-3000.11.4.1/haxr-3000.11.4.1.tar.gz";
+          sha256 = "1mm83k75zdnbx440zczk60ii4nkzll6dyhl3fzj1c4idb37r801r";
+          };
+            hr = hself.callCabal2nix "haxr" newHaxrSrc {};
+          in
+            super.haskell.lib.dontCheck hr;
 
-      # http-streams =
-      #   let newHttpStreamSrc = builtins.fetchTarball { url = "https://hackage.haskell.org/package/http-streams-0.8.7.2/http-streams-0.8.7.2.tar.gz";
-      #     sha256 = "1kz1rs89ii6mzb63h55fj3d7k7zwxi5b1ks04kak2gs9s50xykqh";
-      #     };
-      #       hs = hself.callCabal2nix "http-streams" newHttpStreamSrc {};
-      #     in
-      #       super.haskell.lib.dontCheck hs;
+      http-streams =
+        let newHttpStreamSrc = builtins.fetchTarball { url = "https://hackage.haskell.org/package/http-streams-0.8.7.2/http-streams-0.8.7.2.tar.gz";
+          sha256 = "1kz1rs89ii6mzb63h55fj3d7k7zwxi5b1ks04kak2gs9s50xykqh";
+          };
+            hs = hself.callCabal2nix "http-streams" newHttpStreamSrc {};
+          in
+            super.haskell.lib.dontCheck hs;
 
     hmatrix-sundials1 = super.haskell.lib.dontCheck (
         hself.callCabal2nix "hmatrix-sundials" (builtins.fetchGit {
@@ -71,7 +71,7 @@ haskellDeps = ps: with ps; [
   monad-loops
   hmatrix-sundials1
   numbers
-  Naperian
+  # Naperian
 ];
 
 ghc = myHaskellPackages.ghcWithPackages haskellDeps;
@@ -88,6 +88,7 @@ nixPackages = [
   myHaskellPackages.cabal-install
   myHaskellPackages.stack
   myHaskellPackages.lhs2tex
+  myHaskellPackages.BlogLiterately1
   ];
 
 in
