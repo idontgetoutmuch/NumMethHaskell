@@ -42,17 +42,17 @@ $$
 
 %if False
 \begin{code}
-{-# OPTIONS_GHC -Wall #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE NoImplicitPrelude #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE NumDecimals #-}
-{-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE TypeOperators     #-}
+{-# LANGUAGE NumDecimals       #-}
+{-# LANGUAGE OverloadedLists   #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes       #-}
 
-{-# OPTIONS_GHC -Wall            #-}
+{-# OPTIONS_GHC -Wall          #-}
 
 module WENO where
 
@@ -77,6 +77,10 @@ import           Control.Monad.Writer
 import           Control.Monad.Loops
 
 import           Data.Ratio
+
+import qualified Language.R as R
+import Language.R (R)
+import Language.R.QQ
 \end{code}
 %endif
 
@@ -490,6 +494,10 @@ main :: IO ()
 main = do
   x <- sol
   BL.writeFile "simpleAdvect.txt" $ encodeWith myOptions $ map toList $ toRows x
+  R.runRegion $ do
+    _ <- [r| library(ggplot2) |]
+    return ()
+
 
 defaultOpts' :: method -> ODEOpts method
 defaultOpts' method = ODEOpts

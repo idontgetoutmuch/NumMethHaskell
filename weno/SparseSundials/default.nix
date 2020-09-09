@@ -3,13 +3,19 @@
 , fetchurl
 , python
 , blas
-, lapack
+, liblapack
 , gfortran
 , suitesparse
 , lapackSupport ? true
 , kluSupport ? true }:
 
-assert (!blas.isILP64) && (!lapack.isILP64);
+# assert (!blas.isILP64) && (!lapack.isILP64);
+
+let liblapackShared = liblapack.override {
+  shared = true;
+};
+
+in
 
 stdenv.mkDerivation rec {
   pname = "sundials";
@@ -20,8 +26,8 @@ stdenv.mkDerivation rec {
   ] ++ stdenv.lib.optionals (lapackSupport) [
     gfortran
     blas
-    lapack
-  ] 
+    liblapack
+  ]
   # KLU support is based on Suitesparse.
   # It is tested upstream according to the section 1.1.4 of
   # [INSTALL_GUIDE.pdf](https://raw.githubusercontent.com/LLNL/sundials/master/INSTALL_GUIDE.pdf)
@@ -49,10 +55,11 @@ stdenv.mkDerivation rec {
   ] ++ stdenv.lib.optionals (lapackSupport) [
     "-DSUNDIALS_INDEX_TYPE=int32_t"
     "-DLAPACK_ENABLE=ON"
-    "-DLAPACK_LIBRARIES=${lapack}/lib/liblapack${stdenv.hostPlatform.extensions.sharedLibrary}"
+    # "-DLAPACK_LIBRARIES=${lapack}/lib/liblapack${stdenv.hostPlatform.extensions.sharedLibrary}"
+    "-DLAPACK_LIBRARIES=${liblapackShared}/lib/liblapack${stdenv.hostPlatform.extensions.sharedLibrary};${liblapackShared}/lib/libblas${stdenv.hostPlatform.extensions.sharedLibrary}"
   ] ++ stdenv.lib.optionals (kluSupport) [
     "-DKLU_ENABLE=ON"
-    "-DKLU_INCLUDE_DIR=${suitesparse.dev}/include"
+    "-DKLU_INCLUDE_DIR=${suitesparse}/include"
     "-DKLU_LIBRARY_DIR=${suitesparse}/lib"
   ];
 
