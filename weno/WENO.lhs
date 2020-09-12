@@ -60,7 +60,6 @@ import Prelude as P
 
 import           Numeric.LinearAlgebra
 import           Numeric.Sundials
-import           Numeric.Integration.TanhSinh
 
 import           Control.Exception
 import           Data.Coerce
@@ -72,11 +71,16 @@ import           GHC.Int
 import           Data.Csv
 import           Data.Char
 import qualified Data.ByteString.Lazy as BL
+import           Data.ByteString.Lazy (putStr, writeFile)
+import           Prelude hiding (putStr, writeFile)
 
 import           Control.Monad.Writer
-import           Control.Monad.Loops
 
 import           Data.Ratio
+
+import qualified Data.Vector as V
+
+import           Data.List (transpose)
 
 import qualified Language.R as R
 import Language.R (R)
@@ -86,7 +90,7 @@ import Language.R.QQ
 
 \begin{code}
 bigN :: Int
-bigN = 50
+bigN = 200
 
 deltaX :: Double
 deltaX = 1.0 / (fromIntegral bigN - 1)
@@ -157,8 +161,7 @@ bigD = assoc (bigN, bigN) 0.0 [ ((i, j), f (i, j)) | i <- [0 .. bigN - 1]
 simpleAdvect :: OdeProblem
 simpleAdvect = emptyOdeProblem
   { odeRhs = odeRhsPure $ \_t x -> coerce (bigA #> (coerce x))
-  , odeJacobian = Just (\_t _x -> bigA)
-  , odeEvents = mempty
+  , odeJacobian = Nothing -- Just (\_t _x -> bigA)
   , odeEventHandler = nilEventHandler
   , odeMaxEvents = 0
   , odeInitCond = bigU0
@@ -204,7 +207,6 @@ burgers :: OdeProblem
 burgers = emptyOdeProblem
   { odeRhs = odeRhsPure $ \_t x -> coerce (cmap negate ((bigD #> (coerce x)) * (bigC #> (coerce x))))
   , odeJacobian = Nothing
-  , odeEvents = mempty
   , odeEventHandler = nilEventHandler
   , odeMaxEvents = 0
   , odeInitCond = bigV
@@ -216,7 +218,6 @@ burgersWeno :: OdeProblem
 burgersWeno = emptyOdeProblem
   { odeRhs = odeRhsPure $ \_t x -> coerce (rhs' bigN (coerce x))
   , odeJacobian = Nothing
-  , odeEvents = mempty
   , odeEventHandler = nilEventHandler
   , odeMaxEvents = 0
   , odeInitCond = bigV'
@@ -492,12 +493,27 @@ myOptions = defaultEncodeOptions {
 
 main :: IO ()
 main = do
-  x <- sol
-  BL.writeFile "simpleAdvect.txt" $ encodeWith myOptions $ map toList $ toRows x
+  y <- sol''
+  BL.writeFile "burgersWeno.txt" $ encodeWith myOptions $ map toList $ toRows y
+  -- x <- sol
+  -- BL.writeFile "simpleAdvect.txt" $ encodeWith myOptions $ map toList $ toRows x
+  let rs :: [[Double]]
+      rs = map toList $ toRows y
+      r1 = rs!!0
+      r2 = rs!!1
+      ts :: [Double]
+      ts = map ((deltaX' *) . fromIntegral) [0 .. bigN]
+      ps = zip (map show ts) rs
   R.runRegion $ do
     _ <- [r| library(ggplot2) |]
+    d <- [r| data.frame(ts_hs,r1_hs) |]
+    let f d (cn, xs) = [r| d_hs[,cn_hs]=xs_hs |]
+    c0 <- [r| ggplot(d_hs, aes(ts_hs)) |]
+    cs <- foldM (\c (n, rr) -> do
+                        [r| c_hs + geom_line(aes(y = rr_hs, colour = n_hs)) |])
+                c0 ps
+    _ <- [r| ggsave(filename="diagrams/fold.png") |]
     return ()
-
 
 defaultOpts' :: method -> ODEOpts method
 defaultOpts' method = ODEOpts
@@ -533,8 +549,9 @@ emptyOdeProblem = OdeProblem
       { odeRhs = error "emptyOdeProblem: no odeRhs provided"
       , odeJacobian = Nothing
       , odeInitCond = error "emptyOdeProblem: no odeInitCond provided"
-      , odeEvents = mempty
-      , odeTimeBasedEvents = TimeEventSpec $ return $ undefined -- 1.0 / 0.0
+      , odeEventDirections = V.empty
+      , odeEventConditions = EventConditionsHaskell V.empty
+      , odeTimeBasedEvents = TimeEventSpec $ return $ 1.0 / 0.0
       , odeEventHandler = nilEventHandler
       , odeMaxEvents = 100
       , odeSolTimes = error "emptyOdeProblem: no odeSolTimes provided"

@@ -71,7 +71,7 @@ haskellDeps = ps: with ps; [
   monad-loops
   hmatrix-sundials1
   numbers
-  (pkgs.haskell.lib.dontCheck inline-r)
+  my-inline-r
   # Naperian
 ];
 
@@ -89,8 +89,9 @@ nixPackages = [
   myHaskellPackages.cabal-install
   myHaskellPackages.stack
   myHaskellPackages.lhs2tex
-  myHaskellPackages.BlogLiterately1
+  # myHaskellPackages.BlogLiterately1
   pkgs.R
+  pkgs.rPackages.ggplot2
   ];
 
 in
