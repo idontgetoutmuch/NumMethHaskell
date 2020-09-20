@@ -51,6 +51,7 @@ $$
 {-# LANGUAGE OverloadedLists   #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes       #-}
+{-# LANGUAGE TemplateHaskell   #-}
 
 {-# OPTIONS_GHC -Wall          #-}
 
@@ -83,12 +84,30 @@ import qualified Data.Vector as V
 import           Data.List (transpose)
 
 import qualified Language.R as R
-import Language.R (R)
-import Language.R.QQ
+import           Language.R (R)
+import           Language.R.QQ
+
+import           Frames
+import           Frames.CSV
+import           Control.Lens((^.))
+import           System.IO.Unsafe (unsafePerformIO)
+import qualified Data.Foldable as F
 \end{code}
 %endif
 
 \begin{code}
+tableTypes "NoisyObs" "lynx_hare_df.csv"
+
+loadNoisyObs :: IO (Frame NoisyObs)
+loadNoisyObs = inCoreAoS (readTable "lynx_hare_df.csv")
+
+predPreyObs :: [((Int, Double), (Int, Double))]
+predPreyObs = unsafePerformIO $
+          do xs <- loadNoisyObs
+             let us = F.toList $ fmap (\u -> ((u ^. year), (u ^. hare))) xs
+             let vs = F.toList $ fmap (\u -> ((u ^. year), (u ^. lynx))) xs
+             return $ zip us vs
+
 bigN :: Int
 bigN = 200
 
@@ -634,6 +653,26 @@ main = do
                         [r| c_hs + geom_line(aes(y = rr_hs, colour = n_hs)) |])
                 c0 ps
     _ <- [r| ggsave(filename="diagrams/fold.png") |]
+    return ()
+
+initPop :: (Double, Double)
+initPop = (snd $ fst $ head predPreyObs, snd $ snd $ head $ predPreyObs)
+
+main1 :: IO ()
+main1 = do
+  let hs, ls, ts :: [Double]
+      ts = map fromIntegral $ map fst $ map fst predPreyObs
+      hs = map snd $ map fst predPreyObs
+      ls = map snd $ map snd predPreyObs
+  R.runRegion $ do
+    _ <- [r| library(ggplot2) |]
+    d <- [r| data.frame(ts_hs,hs_hs) |]
+    let f d (cn, xs) = [r| d_hs[,cn_hs]=xs_hs |]
+    c0 <- [r| ggplot(d_hs, aes(ts_hs)) |]
+    cs <- foldM (\c (n, rr) -> do
+                        [r| c_hs + geom_line(aes(y = rr_hs, colour = n_hs)) |])
+                c0 ([("Hares", hs), ("Lynxes", ls)] :: [(String, [Double])])
+    _ <- [r| ggsave(filename="diagrams/HudsonBay.png") |]
     return ()
 
 defaultOpts' :: method -> ODEOpts method
