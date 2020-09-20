@@ -68,6 +68,7 @@ import           Katip
 import           Katip.Monadic
 import           System.IO (stderr)
 import           GHC.Int
+import           Foreign.C.Types
 
 import           Data.Csv
 import           Data.Char
@@ -108,333 +109,6 @@ predPreyObs = unsafePerformIO $
              let vs = F.toList $ fmap (\u -> ((u ^. year), (u ^. lynx))) xs
              return $ zip us vs
 
-bigN :: Int
-bigN = 200
-
-deltaX :: Double
-deltaX = 1.0 / (fromIntegral bigN - 1)
-
-deltaX' :: Double
-deltaX' = 1.0 / (fromIntegral bigN)
-
-bigNt :: Int
-bigNt = 10
-
-t0 :: Double
-t0 = 0.0
-
-tf :: Double
-tf =1.0
-
-deltaTT :: Double
-deltaTT = (tf - t0) / (fromIntegral bigNt)
-
-bigU0 :: Vector Double
-bigU0 = assoc bigN 0.0 [(i, f i) | i <- [0 .. bigN - 1]]
-  where
-  f i = (sin (pi * fromIntegral i * deltaX)) ^ 100
-
-bigA :: Matrix Double
-bigA = assoc (bigN, bigN) 0.0 [ ((i, j), f (i, j)) | i <- [0 .. bigN - 1]
-                                                   , j <- [0 .. bigN - 1]
-                        ]
- where
-   f (i, j) | i       == j          = -1
-            | i - 1 == j          =  1
-            | i       == 0 &&
-              j       == bigN - 1 =  1
-            | otherwise               =  0
-
-bigB :: Matrix Double
-bigB = assoc (bigN, bigN) 0.0 [ ((i, j), f (i, j)) | i <- [0 .. bigN - 1]
-                                                   , j <- [0 .. bigN - 1]
-                        ]
- where
-   f (i, j) | i       == j          = -1
-            | i - 1 == j          =  1
-            | i       == 0 &&
-              j       == bigN - 1 =  1
-            | otherwise               =  0
-
-bigC :: Matrix Double
-bigC = assoc (bigN, bigN) 0.0 [ ((i, j), (1/(2*deltaX)) * f (i, j)) | i <- [0 .. bigN - 1]
-                                                                    , j <- [0 .. bigN - 1]
-                        ]
- where
-   f (i, j)
-            | i     == 0        =  0
-            | i     == bigN - 1 =  0
-            | i     == j        =  0
-            | i - 1 == j        = -1
-            | i + 1 == j        =  1
-            | otherwise         =  0
-
-bigD :: Matrix Double
-bigD = assoc (bigN, bigN) 0.0 [ ((i, j), f (i, j)) | i <- [0 .. bigN - 1]
-                                                   , j <- [0 .. bigN - 1]
-                        ]
- where
-   f (i, j) | i     == j        =  1
-            | otherwise         =  0
-
-simpleAdvect :: OdeProblem
-simpleAdvect = emptyOdeProblem
-  { odeRhs = odeRhsPure $ \_t x -> coerce (bigA #> (coerce x))
-  , odeJacobian = Nothing -- Just (\_t _x -> bigA)
-  , odeEventHandler = nilEventHandler
-  , odeMaxEvents = 0
-  , odeInitCond = bigU0
-  , odeSolTimes = vector $ map (deltaTT *) [0] -- [0 .. 1]
-  , odeTolerances = defaultTolerances
-  }
-
-sol :: IO (Matrix Double)
-sol = do
-  x <- runNoLoggingT $ solve (defaultOpts SDIRK_5_3_4) simpleAdvect
-  case x of
-    Left e  -> error $ show e
-    Right y -> return (solutionMatrix y)
-
-bigV :: Vector Double
-bigV = assoc bigN 0.0 [(i, f i) | i <- [0 .. bigN - 1]]
-  where
-  f i = (sin (2 * pi * fromIntegral i * deltaX))
-
-bigV' :: Vector Double
-bigV' = assoc (bigN + 1) 0.0 [(i, f i) | i <- [0 .. bigN]]
-  where
-  f i = (sin (2 * pi * fromIntegral i * deltaX'))
-
-sol' :: IO (Matrix Double)
-sol' = do
-  w <- runNoLoggingT $ solve (defaultOpts' HEUN_EULER_2_1_2) burgers
-  case w of
-    Left e  -> error $ show e
-    Right y -> return (solutionMatrix y)
-
-sol'' :: IO (Matrix Double)
-sol'' = do
-  -- w <- runNoLoggingT $ solve (defaultOpts' HEUN_EULER_2_1_2) burgersWeno
-  handleScribe <- mkHandleScribe ColorIfTerminal stderr (permitItem InfoS) V2
-  logEnv <- registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "namespace" "devel"
-  w <- runKatipT logEnv $ solve (defaultOpts' BOGACKI_SHAMPINE_4_2_3) burgersWeno
-  case w of
-    Left e  -> error $ show e
-    Right y -> return (solutionMatrix y)
-
-burgers :: OdeProblem
-burgers = emptyOdeProblem
-  { odeRhs = odeRhsPure $ \_t x -> coerce (cmap negate ((bigD #> (coerce x)) * (bigC #> (coerce x))))
-  , odeJacobian = Nothing
-  , odeEventHandler = nilEventHandler
-  , odeMaxEvents = 0
-  , odeInitCond = bigV
-  , odeSolTimes = vector $ map (0.025 *) [0 .. 10]
-  , odeTolerances = defaultTolerances
-  }
-
-burgersWeno :: OdeProblem
-burgersWeno = emptyOdeProblem
-  { odeRhs = odeRhsPure $ \_t x -> coerce (rhs' bigN (coerce x))
-  , odeJacobian = Nothing
-  , odeEventHandler = nilEventHandler
-  , odeMaxEvents = 0
-  , odeInitCond = bigV'
-  , odeSolTimes = vector $ map (0.025 *) [0 .. 10]
-  , odeTolerances = defaultTolerances
-  }
-
-wcL :: Double -> Double -> Double -> Double -> Double -> Double
-wcL v1 v2 v3 v4 v5 = f
-  where
-    eps = 1.0e-6
-
-    s1 = (13.0/12.0)*(v1-2.0*v2+v3)^(2 :: Int) + 0.25*(v1-4.0*v2+3.0*v3)^(2 :: Int)
-    s2 = (13.0/12.0)*(v2-2.0*v3+v4)^(2 :: Int) + 0.25*(v2-v4)^(2 :: Int)
-    s3 = (13.0/12.0)*(v3-2.0*v4+v5)^(2 :: Int) + 0.25*(3.0*v3-4.0*v4+v5)^(2 :: Int)
-
-    c1 = 2.0e-1/((eps+s1)^(2 :: Int))
-    c2 = 5.0e-1/((eps+s2)^(2 :: Int))
-    c3 = 3.0e-1/((eps+s3)^(2 :: Int))
-
-    w1 = c1/(c1+c2+c3)
-    w2 = c2/(c1+c2+c3)
-    w3 = c3/(c1+c2+c3)
-
-    q1 = v1/3.0   - 7.0/6.0*v2 + 11.0/6.0*v3
-    q2 =(-v2)/6.0 + 5.0/6.0*v3 + v4/3.0
-    q3 = v3/3.0   + 5.0/6.0*v4 - v5/6.0
-
-    f = (w1*q1 + w2*q2 + w3*q3)
-
-wcR :: Double -> Double -> Double -> Double -> Double -> Double
-wcR v1 v2 v3 v4 v5 = f
-  where
-    eps = 1.0e-6
-
-    s1 = (13.0/12.0)*(v1-2.0*v2+v3)^(2 :: Int) + 0.25*(v1-4.0*v2+3.0*v3)^(2 :: Int)
-    s2 = (13.0/12.0)*(v2-2.0*v3+v4)^(2 :: Int) + 0.25*(v2-v4)^(2 :: Int)
-    s3 = (13.0/12.0)*(v3-2.0*v4+v5)^(2 :: Int) + 0.25*(3.0*v3-4.0*v4+v5)^(2 :: Int)
-
-    c1 = 3.0e-1/(eps+s1)^(2 :: Int)
-    c2 = 5.0e-1/(eps+s2)^(2 :: Int)
-    c3 = 2.0e-1/(eps+s3)^(2 :: Int)
-
-    w1 = c1/(c1+c2+c3)
-    w2 = c2/(c1+c2+c3)
-    w3 = c3/(c1+c2+c3)
-
-    q1 =(-v1)/6.0    + 5.0/6.0*v2 + v3/3.0
-    q2 = v2/3.0      + 5.0/6.0*v3 - v4/6.0
-    q3 = 11.0/6.0*v3 - 7.0/6.0*v4 + v5/3.0
-
-    f = (w1*q1 + w2*q2 + w3*q3)
-
-crwenoR :: Int -> Vector Double -> Vector Double
-crwenoR n u = assoc (n + 1) 0.0 [(i, f i) | i <- [0 .. n]]
-  where
-    f i | i == 0    = 0.0
-
-    f i | i == 1    = wcR v1 v2 v3 v4 v5
-      where
-        v1 = u!(n-1)
-        v2 = u!(i-1)
-        v3 = u!i
-        v4 = u!(i+1)
-        v5 = u!(i+2)
-
-    f i | i == n - 1 = wcR v1 v2 v3 v4 v5
-      where
-        v1 = u!(i-2)
-        v2 = u!(i-1)
-        v3 = u!i
-        v4 = u!(i+1)
-        v5 = u!1
-
-    f i | i == n     = wcR v1 v2 v3 v4 v5
-      where
-        v1 = u!(i-2)
-        v2 = u!(i-1)
-        v3 = u!i
-        v4 = u!1
-        v5 = u!2
-
-    f i | otherwise  = wcR v1 v2 v3 v4 v5
-      where
-        v1 = u!(i-2)
-        v2 = u!(i-1)
-        v3 = u!i
-        v4 = u!(i+1)
-        v5 = u!(i+2)
-
-crwenoL :: Int -> Vector Double -> Vector Double
-crwenoL n u = assoc (n + 1) 0.0 [(i, f i) | i <- [0 .. n]]
-  where
-    f i | i == 0 = wcL v1 v2 v3 v4 v5
-      where
-        v1 = u!(n-2)
-        v2 = u!(n-1)
-        v3 = u!i
-        v4 = u!(i+1)
-        v5 = u!(i+2)
-
-    f i | i == 1 = wcL v1 v2 v3 v4 v5
-      where
-        v1 = u!(n-1)
-        v2 = u!(i-1)
-        v3 = u!i
-        v4 = u!(i+1)
-        v5 = u!(i+2)
-
-    f i | i == n - 1 = wcL v1 v2 v3 v4 v5
-      where
-        v1 = u!(i-2)
-        v2 = u!(i-1)
-        v3 = u!i
-        v4 = u!(i+1)
-        v5 = u!1
-
-    f i | i == n     = 0.0
-
-    f i | otherwise  = wcL v1 v2 v3 v4 v5
-      where
-        v1 = u!(i-2)
-        v2 = u!(i-1)
-        v3 = u!i
-        v4 = u!(i+1)
-        v5 = u!(i+2)
-
-mLR :: Int -> Matrix Double
-mLR n = assoc (n, n) 0.0 [ ((i, j), f (i, j)) | i <- [0 .. n - 1]
-                                              , j <- [0 .. n - 1]
-                                              ]
-  where
-    f (i, j) | i == 0 &&
-               j == 0     =  1
-             | i == 0 &&
-               j == n - 1 = -1
-             | i == j     =  1
-             | i - 1 == j = -1
-             | otherwise  =  0
-
-mL :: Int -> Matrix Double
-mL n = assoc (n, n + 1) 0.0 [ ((i, j), f (i, j)) | i <- [0 .. n - 1]
-                                                 , j <- [0 .. n]
-                                                 ]
-  where
-    f (i, j) | i == 0 &&
-               j == 0     =  1
-             | i == 0 &&
-               j == n - 1 = -1
-             | i == j     =  1
-             | i - 1 == j = -1
-             | otherwise  =  0
-
-mR :: Int -> Matrix Double
-mR n = assoc (n, n + 1) 0.0 [ ((i, j), f (i, j)) | i <- [0 .. n - 1]
-                                                 , j <- [0 .. n]
-                                                 ]
-  where
-    f (i, j) | i == 0 &&
-               j == 0     =  0
-             | i == 0 &&
-               j == 1     =  1
-             | i == 0 &&
-               j == n     = -1
-             | i == j     = -1
-             | i + 1 == j =  1
-             | otherwise  =  0
-
-preRhs :: Int -> Vector Double -> Vector Double
-preRhs n v = assoc n 0.0 [(i, f i) | i <- [0 .. n - 1]]
-  where
-    ll = (mL n) #> (crwenoL n v)
-    rr = (mR n) #> (crwenoR n v)
-
-    f i | v!i >= 0.0 = negate (v!i * ll!i) / deltaX'
-        | otherwise  = negate (v!i * rr!i) / deltaX'
-
-rhs' :: Int -> Vector Double -> Vector Double
-rhs' n v = vjoin [preRhs n v, [v!0]]
-
-rhs'' :: Int -> Vector Double -> Vector Double
-rhs'' n v = assoc n 0.0 [(i, f i) | i <- [0 .. n - 1]]
-  where
-    ll = (mL n) #> (crwenoL n (vjoin [v, vector [0.0]]))
-    rr = (mR n) #> (crwenoR n (vjoin [vector [0.0], v]))
-
-    f i | v!i >= 0.0 = negate (v!i * ll!i) / deltaX
-        | otherwise  = negate (v!i * rr!i) / deltaX
-
-rhs :: Int -> Vector Double -> Vector Double
-rhs n u = assoc n 0.0 [(i, f i) | i <- [0 .. n - 1]]
-  where
-    uL = crwenoL n u
-    uR = crwenoR n u
-    ll = (mLR n) #> (subVector 0 n uL)
-    rr = (mLR n) #> (subVector 1 n uR)
-    f i | u!i >= 0.0 = negate (u!i * ll!i)
-        | otherwise  = negate (u!i * rr!i)
 \end{code}
 
 \begin{figure}[h]
@@ -608,13 +282,14 @@ Of course we could have substituted $x = x_{i+2}$ and given ourselves
 
 \begin{code}
 coeff :: Integral a => Ratio a -> Ratio a -> Ratio a -> Ratio a
-coeff k r j = sum [ num m / den m | m <- [j + 1 .. k] ]
+coeff k x j = sum [ num m / den m | m <- [j + 1 .. k] ]
   where
     den m = product [ m - l | l <- [0 .. k], l /= m]
-    num m = sum [ product [ r - q + 1 | q <- [0 .. k], q /= l, q /= m]
+    num m = sum [ product [ x - q + 1 | q <- [0 .. k], q /= l, q /= m]
                 | l <- [0 .. k], l /= m ]
 
-coeffs k = [ coeff k r j | r <- [-1 .. k - 1], j <- [0 .. k - 1] ]
+coeffs :: Integral a => Ratio a -> [Ratio a]
+coeffs k = [ coeff k x j | x <- [-1 .. k - 1], j <- [0 .. k - 1] ]
 \end{code}
 
 Here is the eval:
@@ -631,47 +306,67 @@ myOptions = defaultEncodeOptions {
       encDelimiter = fromIntegral (ord ' ')
     }
 
-main :: IO ()
-main = do
-  y <- sol''
-  BL.writeFile "burgersWeno.txt" $ encodeWith myOptions $ map toList $ toRows y
-  -- x <- sol
-  -- BL.writeFile "simpleAdvect.txt" $ encodeWith myOptions $ map toList $ toRows x
-  let rs :: [[Double]]
-      rs = map toList $ toRows y
-      r1 = rs!!0
-      r2 = rs!!1
-      ts :: [Double]
-      ts = map ((deltaX' *) . fromIntegral) [0 .. bigN]
-      ps = zip (map show ts) rs
-  R.runRegion $ do
-    _ <- [r| library(ggplot2) |]
-    d <- [r| data.frame(ts_hs,r1_hs) |]
-    let f d (cn, xs) = [r| d_hs[,cn_hs]=xs_hs |]
-    c0 <- [r| ggplot(d_hs, aes(ts_hs)) |]
-    cs <- foldM (\c (n, rr) -> do
-                        [r| c_hs + geom_line(aes(y = rr_hs, colour = n_hs)) |])
-                c0 ps
-    _ <- [r| ggsave(filename="diagrams/fold.png") |]
-    return ()
+data Rate a = Rate { theta1 :: a, theta2 :: a, theta3 :: a, theta4 :: a }
+  deriving Show
+
+meanRate :: Floating a => Rate a
+meanRate = Rate { theta1 = 0.5, theta2 = 0.025, theta3 = 0.8, theta4 = 0.025 }
+
+dzdt :: (Show a, Floating a) => Rate a -> a -> [a] -> [a]
+dzdt x _t [u, v] = [ (alpha - beta * v) * u
+                   , (-gamma + delta * u) * v
+                   ]
+  where
+    alpha = theta1 x
+    beta = theta2 x
+    delta = theta4 x
+    gamma = theta3 x
+dzdt _x _t xs = error $ show xs
+
+lotkaVolterra :: Double -> Double -> OdeProblem
+lotkaVolterra h l = emptyOdeProblem
+  { odeRhs = odeRhsPure $ \t x -> fromList (dzdt meanRate t (toList x))
+  , odeJacobian = Nothing
+  , odeEventHandler = nilEventHandler
+  , odeMaxEvents = 0
+  , odeInitCond = vector [h, l]
+  , odeSolTimes = vector us
+  , odeTolerances = defaultTolerances
+  }
+
+us :: [Double]
+us = map (* 0.05) $ map fromIntegral ([0 .. 400] :: [Int])
+
+vs :: [Double]
+vs = map (+ 1900) us
+
+sol''' :: Double -> Double -> IO (Matrix Double)
+sol''' h l = do
+  handleScribe <- mkHandleScribe ColorIfTerminal stderr (permitItem InfoS) V2
+  logEnv <- registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "namespace" "devel"
+  w <- runKatipT logEnv $ solve (defaultOpts' BOGACKI_SHAMPINE_4_2_3) (lotkaVolterra h l)
+  case w of
+    Left e  -> error $ show e
+    Right y -> return (solutionMatrix y)
 
 initPop :: (Double, Double)
 initPop = (snd $ fst $ head predPreyObs, snd $ snd $ head $ predPreyObs)
 
 main1 :: IO ()
 main1 = do
-  let hs, ls, ts :: [Double]
+  let hs, ks, ts :: [Double]
       ts = map fromIntegral $ map fst $ map fst predPreyObs
       hs = map snd $ map fst predPreyObs
-      ls = map snd $ map snd predPreyObs
+      ks = map snd $ map snd predPreyObs
+  y <- sol''' (hs!!0) (ks!!0)
+  let rs = transpose $ toLists y
   R.runRegion $ do
     _ <- [r| library(ggplot2) |]
-    d <- [r| data.frame(ts_hs,hs_hs) |]
-    let f d (cn, xs) = [r| d_hs[,cn_hs]=xs_hs |]
-    c0 <- [r| ggplot(d_hs, aes(ts_hs)) |]
-    cs <- foldM (\c (n, rr) -> do
-                        [r| c_hs + geom_line(aes(y = rr_hs, colour = n_hs)) |])
-                c0 ([("Hares", hs), ("Lynxes", ls)] :: [(String, [Double])])
+    c0 <- [r| ggplot() + ggtitle("Hares and Lynxes") + xlab("Year") + ylab("Animals (000s)") |]
+    _  <- foldM (\c (n, rr, tt) -> do
+                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                c0 ([("Hares", hs, ts), ("Lynxes", ks, ts),
+                     ("Predicted Hares", rs!!0, vs), ("Predicted Lynxes", rs!!1, vs)] :: [(String, [Double], [Double])])
     _ <- [r| ggsave(filename="diagrams/HudsonBay.png") |]
     return ()
 
@@ -684,22 +379,6 @@ defaultOpts' method = ODEOpts
   , odeMethod   = method
   , initStep    = Nothing
   , jacobianRepr = DenseJacobian
-  }
-
-defaultOpts :: method -> ODEOpts method
-defaultOpts method = ODEOpts
-  { maxNumSteps = 1e5
-  , minStep     = 1.0e-14
-  , fixedStep   = 0
-  , maxFail     = 10
-  , odeMethod   = method
-  , initStep    = Nothing
-  , jacobianRepr = SparseJacobian
-                 $ SparsePattern
-                 $ cmap (fromIntegral :: I -> Int8)
-                 $ cmap (\x -> case x of 0 -> 0; _ -> 1)
-                 $ flatten
-                 $ toInt bigA
   }
 
 instance Element Int8
