@@ -33,6 +33,12 @@ myHaskellPackageOverlay = self: super: {
           in
             super.haskell.lib.dontCheck v;
 
+      kalman1 = super.haskell.lib.dontCheck (
+        hself.callCabal2nix "kalman" (builtins.fetchGit {
+    url = "file:///Users/dom/Kalman";
+          rev = "619d57e980d53c43bb1675efb17c73127fa924d0";
+}) { });
+
     hmatrix-sundials1 = super.haskell.lib.dontCheck (
         hself.callCabal2nix "hmatrix-sundials" (builtins.fetchGit {
     url = "file:///Users/dom/hmatrix-sundials";
@@ -62,6 +68,7 @@ haskellDeps = ps: with ps; [
   cassava
   Frames
   hmatrix-sundials1
+  kalman1
   lens
   (nixpkgs.haskell.lib.dontCheck inline-r)
 ];
