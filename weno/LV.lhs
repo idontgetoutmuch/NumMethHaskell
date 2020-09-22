@@ -56,6 +56,7 @@ Let us assume that $\alpha, \beta, \delta$ are given but that we wish
 {-# LANGUAGE QuasiQuotes       #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns        #-}
 
 {-# OPTIONS_GHC -Wall          #-}
 
@@ -90,6 +91,7 @@ import qualified Data.Foldable as F
 
 import           Numeric.Particle
 import           Data.Random.Distribution.MultivariateNormal ( Normal(..) )
+import qualified Data.Random.Distribution.Normal as RN
 import qualified Data.Random as R
 import           Control.Monad.State ( evalState, replicateM )
 \end{code}
@@ -261,7 +263,17 @@ P =
 \end{bmatrix}
 $$
 
-A set of \eval{nParticles} runs is shown in Figure~\ref{fig:lvparticles_0}.
+A set of \eval{nParticles} runs is shown in Figure~\ref{fig:lvparticles_0} with
+$[\mu_h, \mu_l, m_\gamma] = \eval{m0}$.
+
+$$
+P =
+\begin{bmatrix}
+\eval{(unSym bigP)!0!0} &                     0.0 &                     0.0 \\
+0.0                     & \eval{(unSym bigP)!1!1} &                     0.0 \\
+0.0                     &                     0.0 & \eval{(unSym bigP)!2!2}
+\end{bmatrix}
+$$
 
 \begin{figure}[h]
 \centering
@@ -287,7 +299,7 @@ m0 = vector [30.0, 4.0, 2.5e-2]
 bigP :: Herm Double
 bigP = sym $ (3><3) [ 1.0e-1, 0.0,    0.0,
                       0.0,    1.0e-1, 0.0,
-                      0.0,    0.0,    1.0e-5
+                      0.0,    0.0,    1.0e-4
                     ]
 
 initParticles :: R.MonadRandom m =>
@@ -318,6 +330,71 @@ sol' s = do
   case w of
     Left e  -> error $ show e
     Right y -> return (solutionMatrix y)
+
+
+lotkaVolterra'' :: [Double] -> SystemState Double -> OdeProblem
+lotkaVolterra'' ts s = emptyOdeProblem
+  { odeRhs = odeRhsPure $ \t x -> fromList (dzdt (meanRate {theta4 = coerce $ gamma s}) t (toList x))
+  , odeJacobian = Nothing
+  , odeEventHandler = nilEventHandler
+  , odeMaxEvents = 0
+  , odeInitCond = vector [hares s, lynxes s]
+  , odeSolTimes = vector ts
+  , odeTolerances = defaultTolerances
+  }
+
+sol'' :: [Double] -> SystemState Double -> IO (Matrix Double)
+sol'' ts s = do
+  handleScribe <- mkHandleScribe ColorIfTerminal stderr (permitItem InfoS) V2
+  logEnv <- registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "namespace" "devel"
+  w <- runKatipT logEnv $ solve (defaultOpts BOGACKI_SHAMPINE_4_2_3) (lotkaVolterra'' ts s)
+  case w of
+    Left e  -> error $ show e
+    Right y -> return (solutionMatrix y)
+
+stateUpdate :: Particles (SystemState Double) -> IO (Particles (SystemState Double))
+stateUpdate ps = do
+  qs <-  V.mapM (sol'' (take 21 us)) ps
+  rr <- V.replicateM nParticles $
+        R.sample $ R.rvar (RN.Normal 0.0 ((unSym bigP)!2!2))
+
+  let newHLs = V.map (\m -> m!20) qs
+      newGammas = V.zipWith (\p q -> gamma p + q) ps rr
+      newStates = V.zipWith (\s m -> SystemState {hares = s!0, lynxes = s!1, gamma = m})
+                            newHLs newGammas
+  return newStates
+
+measureOp :: Particles (SystemState Double) -> Particles (SystemObs Double)
+measureOp = V.map (\s -> SystemObs { obsHares = hares s, obsLynxes = lynxes s})
+
+weight :: SystemObs Double -> SystemObs Double -> Double
+weight obs predicted = R.pdf (Normal xs bigR) ys
+  where
+    xs = vector [obsHares obs, obsLynxes obs]
+    ys = vector [obsHares predicted, obsLynxes predicted]
+
+bigR :: Herm Double
+bigR = sym $ (2><2) [ 1.0e-1, 0.0,
+                      0.0,    1.0e-1
+                    ]
+
+scanMapM :: Monad m => (s -> a -> m s) -> (s -> m b) -> s -> V.Vector a -> m (V.Vector b)
+scanMapM f g !s0 !xs
+  | V.null xs = do
+    r <- g s0
+    return $ V.singleton r
+  | otherwise = do
+    s <- f s0 (V.head xs)
+    r <- g s0
+    liftM (r `V.cons`) (scanMapM f g s (V.tail xs))
+
+test = do
+  is <- initParticles
+  js <- runPF stateUpdate measureOp weight is
+              (SystemObs {obsHares =  snd $ fst (predPreyObs!!1),
+                          obsLynxes = snd $ snd (predPreyObs!!1)
+                         })
+  error (show js)
 \end{code}
 %endif
 
