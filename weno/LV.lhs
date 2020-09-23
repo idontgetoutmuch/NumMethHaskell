@@ -111,6 +111,12 @@ predPreyObs = unsafePerformIO $
              let zs = F.toList $ fmap (\u -> ((u ^. year), (u ^. lynx))) xs
              return $ zip ys zs
 
+predPreyObs' :: V.Vector (SystemObs Double)
+predPreyObs' = unsafePerformIO $
+          do xs <- loadNoisyObs
+             let ys = V.fromList $ F.toList $ fmap (^. hare) xs
+                 zs = V.fromList $ F.toList $ fmap (^. lynx) xs
+             return $ V.zipWith SystemObs ys zs
 \end{code}
 %endif
 
@@ -187,6 +193,18 @@ main = do
       tt = V.map (\ss -> [("Predicted Hares",  ss!!0, vs),
                           ("Predicted Lynxes", ss!!1, vs)]) ss
       uu = concat $ V.toList tt
+  is <- initParticles
+  foo <- scanMapM (runPF stateUpdate measureOp weight) return is (V.tail predPreyObs')
+  let as = take 21 $ V.toList $
+           V.map (\ls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map hares ls) foo
+      bs = take 21 $ V.toList $
+           V.map (\ls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map lynxes ls) foo
+      cs = take 21 $ V.toList $
+           V.map (\ls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map gamma ls) foo
+      preDs = V.toList $ V.map V.toList $ V.map (V.map hares) foo
+      ds = concat $ zipWith (\t vs -> zip (repeat t) vs) ts preDs
+      es = map fst ds
+      fs = map snd ds
   R.runRegion $ do
     _ <- [r| library(ggplot2) |]
     c0 <- [r| ggplot() |]
@@ -195,20 +213,37 @@ main = do
     c3 <- [r| c2_hs + ylab("Animals (000s)") |]
     c4 <- [r| c3_hs + labs(colour = "Species") |]
     c5 <- [r| c4_hs + theme(plot.title = element_text(hjust = 0.5)) |]
+    -- _  <- foldM (\c (n, rr, tt) -> do
+    --                     [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+    --             c5 ([("Hares", hs, ts), ("Lynxes", ks, ts)] :: [(String, [Double], [Double])])
+    -- _ <-  [r| ggsave(filename="diagrams/HudsonBay.png") |]
+
+    c6  <- foldM (\c (n, rr, tt) -> do
+                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                c5 ([("Hares Obs", hs, ts), ("Lynxes Obs", ks, ts),
+                     ("Hares Pred", as, ts), ("Lynxes Pred", bs, ts)] :: [(String, [Double], [Double])])
+    _ <-  [r| c6_hs + geom_point(aes(x=es_hs, y=fs_hs)) |]
+    _ <-  [r| ggsave(filename="diagrams/Posterior.png") |]
+
+    d1 <- [r| c0_hs + ggtitle("Hares and Lynxes") |]
+    d2 <- [r| d1_hs + xlab("Year") |]
+    d3 <- [r| d2_hs + ylab("Animals (000s)") |]
+    d4 <- [r| d3_hs + labs(colour = "Species") |]
+    d5 <- [r| d4_hs + theme(plot.title = element_text(hjust = 0.5)) |]
     _  <- foldM (\c (n, rr, tt) -> do
                         [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
-                c5 ([("Hares", hs, ts), ("Lynxes", ks, ts)] :: [(String, [Double], [Double])])
-    _ <-  [r| ggsave(filename="diagrams/HudsonBay.png") |]
+                c5 ([("Gamma", cs, ts)] :: [(String, [Double], [Double])])
+    _  <-  [r| ggsave(filename="diagrams/Gamma.png") |]
 
-    _  <- foldM (\c (n, rr, tt) -> do
-                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
-                c5 ([("Predicted Hares", rs!!0, vs), ("Predicted Lynxes", rs!!1, vs)] :: [(String, [Double], [Double])])
-    _ <- [r| ggsave(filename="diagrams/ExampleLvSolution.png") |]
+    -- _  <- foldM (\c (n, rr, tt) -> do
+    --                     [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+    --             c5 ([("Predicted Hares", rs!!0, vs), ("Predicted Lynxes", rs!!1, vs)] :: [(String, [Double], [Double])])
+    -- _ <- [r| ggsave(filename="diagrams/ExampleLvSolution.png") |]
 
-    _  <- foldM (\c (n, rr, tt) -> do
-                [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
-                c5 uu
-    _ <- [r| ggsave(filename="diagrams/LvParticles.png") |]
+    -- _  <- foldM (\c (n, rr, tt) -> do
+    --             [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+    --             c5 uu
+    -- _ <- [r| ggsave(filename="diagrams/LvParticles.png") |]
     return ()
 
 defaultOpts :: method -> ODEOpts method
@@ -291,15 +326,15 @@ data SystemObs a = SystemObs { obsHares  :: a, obsLynxes :: a}
   deriving Show
 
 nParticles :: Int
-nParticles = 100
+nParticles = 2000
 
 m0 :: Vector Double
 m0 = vector [30.0, 4.0, 2.5e-2]
 
 bigP :: Herm Double
-bigP = sym $ (3><3) [ 1.0e-1, 0.0,    0.0,
-                      0.0,    1.0e-1, 0.0,
-                      0.0,    0.0,    1.0e-4
+bigP = sym $ (3><3) [ 4.0e-1, 0.0,    0.0,
+                      0.0,    4.0e-1, 0.0,
+                      0.0,    0.0,    4.0e-4
                     ]
 
 initParticles :: R.MonadRandom m =>
@@ -357,11 +392,17 @@ stateUpdate ps = do
   qs <-  V.mapM (sol'' (take 21 us)) ps
   rr <- V.replicateM nParticles $
         R.sample $ R.rvar (RN.Normal 0.0 ((unSym bigP)!2!2))
+  rrH <- V.replicateM nParticles $
+         R.sample $ R.rvar (RN.Normal 0.0 ((unSym bigP)!0!0))
+  rrL <- V.replicateM nParticles $
+         R.sample $ R.rvar (RN.Normal 0.0 ((unSym bigP)!1!1))
 
   let newHLs = V.map (\m -> m!20) qs
       newGammas = V.zipWith (\p q -> gamma p + q) ps rr
-      newStates = V.zipWith (\s m -> SystemState {hares = s!0, lynxes = s!1, gamma = m})
-                            newHLs newGammas
+      newHares  = V.zipWith (+) (V.map (!0) newHLs) rrH
+      newLynxes = V.zipWith (+) (V.map (!1) newHLs) rrL
+      newStates = V.zipWith3 (\h l m -> SystemState {hares = h, lynxes = l, gamma = m})
+                             newHares newLynxes newGammas
   return newStates
 
 measureOp :: Particles (SystemState Double) -> Particles (SystemObs Double)
@@ -374,8 +415,8 @@ weight obs predicted = R.pdf (Normal xs bigR) ys
     ys = vector [obsHares predicted, obsLynxes predicted]
 
 bigR :: Herm Double
-bigR = sym $ (2><2) [ 1.0e-1, 0.0,
-                      0.0,    1.0e-1
+bigR = sym $ (2><2) [ 32.0e-1, 0.0,
+                      0.0,    32.0e-1
                     ]
 
 scanMapM :: Monad m => (s -> a -> m s) -> (s -> m b) -> s -> V.Vector a -> m (V.Vector b)
@@ -394,7 +435,17 @@ test = do
               (SystemObs {obsHares =  snd $ fst (predPreyObs!!1),
                           obsLynxes = snd $ snd (predPreyObs!!1)
                          })
-  error (show js)
+  print $ (* (1 / (fromIntegral nParticles))) $ sum $ V.map hares js
+  print $ (* (1 / (fromIntegral nParticles))) $ sum $ V.map lynxes js
+  ks <- runPF stateUpdate measureOp weight js
+              (SystemObs {obsHares =  snd $ fst (predPreyObs!!2),
+                          obsLynxes = snd $ snd (predPreyObs!!2)
+                         })
+  print $ (* (1 / (fromIntegral nParticles))) $ sum $ V.map hares ks
+  print $ (* (1 / (fromIntegral nParticles))) $ sum $ V.map lynxes ks
+  foo <- scanMapM (runPF stateUpdate measureOp weight) return is predPreyObs'
+  let as = V.map (\ls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map hares ls) foo
+  print as
 \end{code}
 %endif
 
