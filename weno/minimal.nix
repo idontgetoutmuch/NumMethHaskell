@@ -36,7 +36,7 @@ myHaskellPackageOverlay = self: super: {
       kalman1 = super.haskell.lib.dontCheck (
         hself.callCabal2nix "kalman" (builtins.fetchGit {
     url = "file:///Users/dom/Kalman";
-          rev = "619d57e980d53c43bb1675efb17c73127fa924d0";
+          rev = "2314229a14ae25143f675a9eb08d8767a9c1ac56";
 }) { });
 
     hmatrix-sundials1 = super.haskell.lib.dontCheck (

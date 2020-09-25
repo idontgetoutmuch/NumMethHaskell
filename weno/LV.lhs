@@ -65,10 +65,13 @@ module LotkaVolterra (main) where
 import Prelude as P
 
 import           Numeric.LinearAlgebra
+import qualified Numeric.LinearAlgebra.Static as LS
+import           GHC.TypeNats
 import           Numeric.Sundials
 
 import           Control.Exception
 import           Katip
+import           Katip.Monadic
 import           System.IO (stderr)
 import           GHC.Int
 
@@ -90,6 +93,7 @@ import           System.IO.Unsafe (unsafePerformIO)
 import qualified Data.Foldable as F
 
 import           Numeric.Particle
+import           Numeric.Kalman
 import           Data.Random.Distribution.MultivariateNormal ( Normal(..) )
 import qualified Data.Random.Distribution.Normal as RN
 import qualified Data.Random as R
@@ -446,7 +450,91 @@ test = do
   foo <- scanMapM (runPF stateUpdate measureOp weight) return is predPreyObs'
   let as = V.map (\ls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map hares ls) foo
   print as
+
+lotkaVolterra3 :: [Double] -> [Double] -> OdeProblem
+lotkaVolterra3 ts s = emptyOdeProblem
+  { odeRhs = odeRhsPure $ \t x -> fromList (dzdt (Rate (r!!0) (r!!1) (r!!2) (r!!3)) t (toList x))
+  , odeJacobian = Nothing
+  , odeEventHandler = nilEventHandler
+  , odeMaxEvents = 0
+  , odeInitCond = vector y
+  , odeSolTimes = vector ts
+  , odeTolerances = defaultTolerances
+  }
+  where
+    r = coerce $ take 4 s
+    y = take 2 $ drop 4 s
+
+-- lotkaVolterra'' :: [Double] -> SystemState Double -> OdeProblem
+-- lotkaVolterra'' ts s = emptyOdeProblem
+--   { odeRhs = odeRhsPure $ \t x -> fromList (dzdt (meanRate {theta4 = coerce $ gamma s}) t (toList x))
+--   , odeJacobian = Nothing
+--   , odeEventHandler = nilEventHandler
+--   , odeMaxEvents = 0
+--   , odeInitCond = vector [hares s, lynxes s]
+--   , odeSolTimes = vector ts
+--   , odeTolerances = defaultTolerances
+--   }
+
+-- sol3 :: [Double] -> [Double] -> IO (Matrix Double)
+sol3 ts s = do
+  -- handleScribe <- mkHandleScribe ColorIfTerminal stderr (permitItem InfoS) V2
+  -- logEnv <- registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "namespace" "devel"
+  w <- runNoLoggingT $ solve (defaultOpts BOGACKI_SHAMPINE_4_2_3) (lotkaVolterra3 ts s)
+  case w of
+    Left e  -> error $ show e
+    Right y -> return (solutionMatrix y)
+
+foo :: forall m n p . (KnownNat m, KnownNat n, KnownNat (n - m), m <= n, MonadIO p)
+    => (LS.R n, LS.Sym n)
+    -> LS.R m
+    -> p (LS.R n, LS.Sym n)
+foo = runUKFM measure bigRS evolveM bigPS undefined
+  where
+    measure :: b -> LS.R n -> LS.R m
+    measure = const (LS.unrow . fst. LS.splitCols . LS.row)
+
+    bigRS :: b -> LS.Sym m
+    bigRS = const (LS.sym $ LS.matrix $ concat $ toLists $ unSym bigR)
+
+    evolveM :: b -> LS.R n -> p (LS.R n)
+    evolveM _ x = do m <- sol3 (take 21 us) (toList $ LS.extract x)
+                     let v =  m!20
+                     return (LS.vector [v!0, v!1])
+
+    bigPS :: b -> LS.Sym n
+    bigPS = const (LS.sym $ LS.matrix bigQ)
+
+bigQ :: [Double]
+bigQ = [ 1.0e-1, 0.0,    0.0,    0.0,    0.0, 0.0
+       , 0.0,    5.0e-3, 0.0,    0.0,    0.0, 0.0
+       , 0.0,    0.0,    1.0e-1, 0.0,    0.0, 0.0
+       , 0.0,    0.0,    0.0,    5.0e-3, 0.0, 0.0
+       , 0.0,    0.0,    0.0,    0.0,    1.0, 0.0
+       , 0.0,    0.0,    0.0,    0.0,    0.0, 1.0
+       ]
+
+testUKF :: IO (LS.R 6, LS.Sym 6)
+testUKF = foo (LS.vector [0.5, 0.025, 0.8, 0.025, 30, 4], LS.sym $ LS.matrix bigQ)
+              ((LS.vector [6.1, 47.2]) :: LS.R 2)
 \end{code}
 %endif
+
+model {
+  theta[{1, 3}] ~ normal(1, 0.5);
+  theta[{2, 4}] ~ normal(0.05, 0.05);
+  sigma ~ lognormal(-1, 1);
+  z_init ~ lognormal(log(10), 1);
+  for (k in 1:2) {
+    y_init[k] ~ lognormal(log(z_init[k]), sigma[k]);
+    y[ , k] ~ lognormal(log(z[, k]), sigma[k]);
+  }
+}
+
+meanRate :: Floating a => Rate a
+meanRate = Rate { theta1 = 0.5, theta2 = 0.025, theta3 = 0.8, theta4 = 0.025 }
+
+m0 :: Vector Double
+m0 = vector [30.0, 4.0, 2.5e-2]
 
 \end{document}
