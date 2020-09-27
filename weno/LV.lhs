@@ -98,6 +98,8 @@ import           Data.Random.Distribution.MultivariateNormal ( Normal(..) )
 import qualified Data.Random.Distribution.Normal as RN
 import qualified Data.Random as R
 import           Control.Monad.State ( evalState, replicateM )
+
+import Debug.Trace
 \end{code}
 %endif
 
@@ -505,6 +507,54 @@ foo = runUKFM measure bigRS evolveM bigPS undefined
     bigPS :: b -> LS.Sym n
     bigPS = const (LS.sym $ LS.matrix bigQ)
 
+bar :: forall p . (MonadIO p)
+    => (LS.R 6, LS.Sym 6)
+    -> LS.R 2
+    -> p (LS.R 6, LS.Sym 6)
+bar (sm, sv) a = runUKFM measure bigRS evolveM bigPS undefined (sm, sv) a
+  where
+    -- measure :: b -> LS.R n -> LS.R m
+    measure = const (LS.unrow . fst. LS.splitCols . LS.row)
+
+    -- bigRS :: b -> LS.Sym m
+    bigRS = const (LS.sym $ LS.matrix $ concat $ toLists $ unSym bigR)
+
+    -- evolveM :: b -> LS.R n -> p (LS.R n)
+    evolveM _ x = do m <- sol3 (take 21 us) (toList $ LS.extract x)
+                     let v =  m!20
+                         ps :: LS.L 1 4
+                         qs :: LS.L 1 2
+                         (ps, qs) = LS.splitCols $ LS.row sm
+                         urk :: LS.L 1 2
+                         urk = LS.matrix [v!0, v!1]
+                         eek :: LS.L 1 6
+                         eek = ps LS.||| urk
+                     return $ LS.unrow eek -- ((LS.vector [v!0, v!1]) :: LS.R 6)
+
+    -- bigPS :: b -> LS.Sym n
+    bigPS = const bigQ6
+
+baz :: forall p . (MonadIO p)
+    => (LS.R 6, LS.Sym 6)
+    -> p (LS.R 6, LS.Sym 6)
+baz (sm, sv) = runUKFPredictionM evolveM bigPS undefined (sm, sv)
+  where
+    -- evolveM :: b -> LS.R n -> p (LS.R n)
+    evolveM _ x = do m <- sol3 (take 21 us) (toList $ LS.extract x)
+                     let v =  m!20
+                         ps :: LS.L 1 4
+                         qs :: LS.L 1 2
+                         (ps, qs) = LS.splitCols $ LS.row sm
+                         urk :: LS.L 1 2
+                         urk = LS.matrix [v!0, v!1]
+                         eek :: LS.L 1 6
+                         eek = ps LS.||| urk
+                     trace (show x ++ " " ++ show v) $ return ()
+                     return $ LS.unrow eek -- ((LS.vector [v!0, v!1]) :: LS.R 6)
+
+    -- bigPS :: b -> LS.Sym n
+    bigPS = const bigQ6
+
 bigQ :: [Double]
 bigQ = [ 1.0e-1, 0.0,    0.0,    0.0,    0.0, 0.0
        , 0.0,    5.0e-3, 0.0,    0.0,    0.0, 0.0
@@ -514,9 +564,20 @@ bigQ = [ 1.0e-1, 0.0,    0.0,    0.0,    0.0, 0.0
        , 0.0,    0.0,    0.0,    0.0,    0.0, 1.0
        ]
 
+bigQ6 :: LS.Sym 6
+bigQ6 = LS.sym $ LS.matrix bigQ
+
+testUKFPredict :: IO (LS.R 6, LS.Sym 6)
+testUKFPredict = baz (LS.vector [0.5, 0.025, 0.8, 0.025, 4, 30], LS.sym $ LS.matrix bigQ)
+
 testUKF :: IO (LS.R 6, LS.Sym 6)
-testUKF = foo (LS.vector [0.5, 0.025, 0.8, 0.025, 30, 4], LS.sym $ LS.matrix bigQ)
+testUKF = bar (LS.vector [0.5, 0.025, 0.8, 0.025, 4.0, 30.0], LS.sym $ LS.matrix bigQ)
               ((LS.vector [6.1, 47.2]) :: LS.R 2)
+
+testUKF1 :: IO (LS.R 6, LS.Sym 6)
+testUKF1 = do
+  mv <- testUKF
+  bar mv ((LS.vector [9.8, 70.2]) :: LS.R 2)
 \end{code}
 %endif
 
