@@ -57,6 +57,8 @@ Let us assume that $\alpha, \beta, \delta$ are given but that we wish
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DeriveFunctor        #-}
+{-# LANGUAGE DeriveFoldable        #-}
 
 {-# OPTIONS_GHC -Wall          #-}
 
@@ -211,6 +213,7 @@ main = do
       ds = concat $ zipWith (\t vs -> zip (repeat t) vs) ts preDs
       es = map fst ds
       fs = map snd ds
+  (as', bs') <- testL
   R.runRegion $ do
     _ <- [r| library(ggplot2) |]
     c0 <- [r| ggplot() |]
@@ -219,27 +222,28 @@ main = do
     c3 <- [r| c2_hs + ylab("Animals (000s)") |]
     c4 <- [r| c3_hs + labs(colour = "Species") |]
     c5 <- [r| c4_hs + theme(plot.title = element_text(hjust = 0.5)) |]
-    -- _  <- foldM (\c (n, rr, tt) -> do
-    --                     [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
-    --             c5 ([("Hares", hs, ts), ("Lynxes", ks, ts)] :: [(String, [Double], [Double])])
-    -- _ <-  [r| ggsave(filename="diagrams/HudsonBay.png") |]
-
-    c6  <- foldM (\c (n, rr, tt) -> do
-                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
-                c5 ([("Hares Obs", hs, ts), ("Lynxes Obs", ks, ts),
-                     ("Hares Pred", as, ts), ("Lynxes Pred", bs, ts)] :: [(String, [Double], [Double])])
-    _ <-  [r| c6_hs + geom_point(aes(x=es_hs, y=fs_hs)) |]
-    _ <-  [r| ggsave(filename="diagrams/Posterior.png") |]
-
-    d1 <- [r| c0_hs + ggtitle("Hares and Lynxes") |]
-    d2 <- [r| d1_hs + xlab("Year") |]
-    d3 <- [r| d2_hs + ylab("Animals (000s)") |]
-    d4 <- [r| d3_hs + labs(colour = "Species") |]
-    d5 <- [r| d4_hs + theme(plot.title = element_text(hjust = 0.5)) |]
     _  <- foldM (\c (n, rr, tt) -> do
                         [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
-                c5 ([("Gamma", cs, ts)] :: [(String, [Double], [Double])])
-    _  <-  [r| ggsave(filename="diagrams/Gamma.png") |]
+                c5 ([ ("Hares", hs, ts), ("Lynxes", ks, ts)
+                    , ("HaresL", (V.toList as'), ts), ("LynxesL", (V.toList bs'), ts) ] :: [(String, [Double], [Double])])
+    _ <-  [r| ggsave(filename="diagrams/HudsonBay.png") |]
+
+    -- c6  <- foldM (\c (n, rr, tt) -> do
+    --                     [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+    --             c5 ([("Hares Obs", hs, ts), ("Lynxes Obs", ks, ts),
+    --                  ("Hares Pred", as, ts), ("Lynxes Pred", bs, ts)] :: [(String, [Double], [Double])])
+    -- _ <-  [r| c6_hs + geom_point(aes(x=es_hs, y=fs_hs)) |]
+    -- _ <-  [r| ggsave(filename="diagrams/Posterior.png") |]
+
+    -- d1 <- [r| c0_hs + ggtitle("Hares and Lynxes") |]
+    -- d2 <- [r| d1_hs + xlab("Year") |]
+    -- d3 <- [r| d2_hs + ylab("Animals (000s)") |]
+    -- d4 <- [r| d3_hs + labs(colour = "Species") |]
+    -- d5 <- [r| d4_hs + theme(plot.title = element_text(hjust = 0.5)) |]
+    -- _  <- foldM (\c (n, rr, tt) -> do
+    --                     [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+    --             c5 ([("Gamma", cs, ts)] :: [(String, [Double], [Double])])
+    -- _  <-  [r| ggsave(filename="diagrams/Gamma.png") |]
 
     -- _  <- foldM (\c (n, rr, tt) -> do
     --                     [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
@@ -328,11 +332,14 @@ $$
 data SystemState a = SystemState { hares  :: a, lynxes  :: a, gamma :: a}
   deriving Show
 
+data SystemState1 a = SystemState1 { hares1  :: a, lynxes1  :: a, alpha1 :: a, beta1 :: a, delta1 :: a, gamma1 :: a}
+  deriving (Show, Functor, Foldable)
+
 data SystemObs a = SystemObs { obsHares  :: a, obsLynxes :: a}
   deriving Show
 
 nParticles :: Int
-nParticles = 2000
+nParticles = 100
 
 m0 :: Vector Double
 m0 = vector [30.0, 4.0, 2.5e-2]
@@ -414,6 +421,9 @@ stateUpdate ps = do
 measureOp :: Particles (SystemState Double) -> Particles (SystemObs Double)
 measureOp = V.map (\s -> SystemObs { obsHares = hares s, obsLynxes = lynxes s})
 
+measureOpL :: Particles (SystemState1 Double) -> Particles (SystemObs Double)
+measureOpL = V.map (\s -> SystemObs { obsHares = exp $ hares1 s, obsLynxes = exp $ lynxes1 s})
+
 weight :: SystemObs Double -> SystemObs Double -> Double
 weight obs predicted = R.pdf (Normal xs bigR) ys
   where
@@ -424,6 +434,11 @@ bigR :: Herm Double
 bigR = sym $ (2><2) [ 32.0e-1, 0.0,
                       0.0,    32.0e-1
                     ]
+
+bigRL :: Herm Double
+bigRL = sym $ (2><2) [ 1.0e-1, 0.0,
+                       0.0,    1.0e-1
+                     ]
 
 scanMapM :: Monad m => (s -> a -> m s) -> (s -> m b) -> s -> V.Vector a -> m (V.Vector b)
 scanMapM f g !s0 !xs
@@ -454,7 +469,8 @@ test = do
   print as
 
 lotkaVolterra3 :: [Double] -> [Double] -> OdeProblem
-lotkaVolterra3 ts s = emptyOdeProblem
+lotkaVolterra3 ts s = -- trace (show r ++ " " ++ show y) $
+  emptyOdeProblem
   { odeRhs = odeRhsPure $ \t x -> fromList (dzdt (Rate (r!!0) (r!!1) (r!!2) (r!!3)) t (toList x))
   , odeJacobian = Nothing
   , odeEventHandler = nilEventHandler
@@ -464,8 +480,8 @@ lotkaVolterra3 ts s = emptyOdeProblem
   , odeTolerances = defaultTolerances
   }
   where
-    r = coerce $ take 4 s
-    y = take 2 $ drop 4 s
+    r = coerce $ take 4 $ drop 2 s
+    y = take 2 $ s
 
 -- lotkaVolterra'' :: [Double] -> SystemState Double -> OdeProblem
 -- lotkaVolterra'' ts s = emptyOdeProblem
@@ -534,6 +550,105 @@ bar (sm, sv) a = runUKFM measure bigRS evolveM bigPS undefined (sm, sv) a
     -- bigPS :: b -> LS.Sym n
     bigPS = const bigQ6
 
+barL :: forall p . (MonadIO p)
+    => (LS.R 6, LS.Sym 6)
+    -> LS.R 2
+    -> p (LS.R 6, LS.Sym 6)
+barL (sm, sv) a = runUKFM measure bigRS evolveM bigPS undefined (sm, sv) a
+  where
+    -- measure :: b -> LS.R n -> LS.R m
+    measure = const (LS.unrow . fst. LS.splitCols . LS.row)
+
+    -- bigRS :: b -> LS.Sym m
+    bigRS = const (LS.sym $ LS.matrix $ concat $ toLists $ unSym bigR)
+
+    -- evolveM :: b -> LS.R n -> p (LS.R n)
+    evolveM _ x = do let y = LS.dvmap exp x
+                     m <- sol3 (take 21 us) (toList $ LS.extract y)
+                     let v =  m!20
+                         ps :: LS.L 1 4
+                         qs :: LS.L 1 2
+                         (ps, qs) = LS.splitCols $ LS.row sm
+                         urk :: LS.L 1 2
+                         urk = LS.dmmap log $ LS.matrix [v!0, v!1]
+                         eek :: LS.L 1 6
+                         eek = ps LS.||| urk
+                     return $ LS.unrow eek -- ((LS.vector [v!0, v!1]) :: LS.R 6)
+
+    -- bigPS :: b -> LS.Sym n
+    bigPS = const bigQ6
+
+m0L :: [Double]
+m0L = fmap log [0.5, 0.025, 0.8, 0.025, 30, 4]
+
+initParticlesL :: R.MonadRandom m =>
+                 m (Particles (SystemState1 Double))
+initParticlesL = V.replicateM nParticles $ do
+  rr <- R.sample $ R.rvar (Normal (vector m0L) (sym $ (6><6) bigQ))
+  return $ fmap exp $ SystemState1 { alpha1  = rr!0
+                                   , beta1   = rr!1
+                                   , delta1  = rr!2
+                                   , gamma1  = rr!3
+                                   , hares1  = rr!4
+                                   , lynxes1 = rr!5
+                                   }
+
+stateUpdateL :: Particles (SystemState1 Double) -> IO (Particles (SystemState1 Double))
+stateUpdateL ps = do
+  qs <-  V.mapM (sol3 (take 21 us)) (V.map (F.toList . fmap exp) ps)
+  rr <- V.replicateM nParticles $
+        R.sample $ R.rvar (Normal (vector (replicate 6 0.0)) (sym $ (6><6) bigQ))
+
+  let ms :: V.Vector (Vector Double)
+      ms = V.map (log . (!20)) qs
+      ns = V.zipWith3 (\p q r -> SystemState1 { alpha1  = r!0 + alpha1 q
+                                              , beta1   = r!1 + beta1 q
+                                              , delta1  = r!2 + delta1 q
+                                              , gamma1  = r!3 + gamma1 q
+                                              , hares1  = r!4 + p!0
+                                              , lynxes1 = r!5 + p!1
+                                              })
+                      ms ps rr
+  return ns
+
+testL :: IO (V.Vector Double, V.Vector Double)
+testL = do
+  is <- initParticlesL
+  js <- runPF stateUpdateL measureOpL weight (V.map (fmap log) is)
+              (SystemObs {obsHares =  snd $ fst (predPreyObs!!1),
+                          obsLynxes = snd $ snd (predPreyObs!!1)
+                         })
+  ks <- runPF stateUpdateL measureOpL weight js
+              (SystemObs {obsHares =  snd $ fst (predPreyObs!!2),
+                          obsLynxes = snd $ snd (predPreyObs!!2)
+                         })
+  foo <- scanMapM (runPF stateUpdateL measureOpL weight) return (V.map (fmap log) is) (V.drop 1 predPreyObs')
+  let as = V.map (\ls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map hares1 ls) foo
+  let bs = V.map (\ls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map lynxes1 ls) foo
+  return (as, bs)
+
+bazL :: forall p . (MonadIO p)
+    => (LS.R 6, LS.Sym 6)
+    -> p (LS.R 6, LS.Sym 6)
+bazL (sm, sv) = runUKFPredictionM evolveM bigPS undefined (sm, sv)
+  where
+    -- evolveM :: b -> LS.R n -> p (LS.R n)
+    evolveM _ x = do let y = LS.dvmap exp x
+                     m <- sol3 (take 21 us) (toList $ LS.extract y)
+                     let v =  m!20
+                         ps :: LS.L 1 4
+                         qs :: LS.L 1 2
+                         (ps, qs) = LS.splitCols $ LS.row sm
+                         urk :: LS.L 1 2
+                         urk = LS.dmmap log $ LS.matrix [v!0, v!1]
+                         eek :: LS.L 1 6
+                         eek = ps LS.||| urk
+                     trace ("\nbazL " ++ {- show y ++ " " ++ -} show (v)) $ return ()
+                     return $ LS.unrow eek -- ((LS.vector [v!0, v!1]) :: LS.R 6)
+
+    -- bigPS :: b -> LS.Sym n
+    bigPS = const bigQ6
+
 baz :: forall p . (MonadIO p)
     => (LS.R 6, LS.Sym 6)
     -> p (LS.R 6, LS.Sym 6)
@@ -556,12 +671,12 @@ baz (sm, sv) = runUKFPredictionM evolveM bigPS undefined (sm, sv)
     bigPS = const bigQ6
 
 bigQ :: [Double]
-bigQ = [ 1.0e-1, 0.0,    0.0,    0.0,    0.0, 0.0
-       , 0.0,    5.0e-3, 0.0,    0.0,    0.0, 0.0
-       , 0.0,    0.0,    1.0e-1, 0.0,    0.0, 0.0
-       , 0.0,    0.0,    0.0,    5.0e-3, 0.0, 0.0
-       , 0.0,    0.0,    0.0,    0.0,    1.0, 0.0
-       , 0.0,    0.0,    0.0,    0.0,    0.0, 1.0
+bigQ = [ 1.0e-2, 0.0,    0.0,    0.0,    0.0,    0.0
+       , 0.0,    5.0e-3, 0.0,    0.0,    0.0,    0.0
+       , 0.0,    0.0,    1.0e-2, 0.0,    0.0,    0.0
+       , 0.0,    0.0,    0.0,    5.0e-3, 0.0,    0.0
+       , 0.0,    0.0,    0.0,    0.0,    1.0e-1, 0.0
+       , 0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-1
        ]
 
 bigQ6 :: LS.Sym 6
@@ -569,6 +684,35 @@ bigQ6 = LS.sym $ LS.matrix bigQ
 
 testUKFPredict :: IO (LS.R 6, LS.Sym 6)
 testUKFPredict = baz (LS.vector [0.5, 0.025, 0.8, 0.025, 4, 30], LS.sym $ LS.matrix bigQ)
+
+testUKFPredictL :: IO (LS.R 6, LS.Sym 6)
+testUKFPredictL = do
+  (m, v) <- bazL (LS.vector $ map log [0.5, 0.025, 0.8, 0.025, 30, 4], LS.sym $ LS.matrix bigQ)
+  return (LS.dvmap exp m, v)
+
+testUKFL :: IO (LS.R 6, LS.Sym 6)
+testUKFL = barL (LS.vector $ map log [0.5, 0.025, 0.8, 0.025, 30.0, 4.0], LS.sym $ LS.matrix bigQ)
+              ((LS.vector $ map log [47.2, 6.1]) :: LS.R 2)
+
+testUKFPredictL1 :: IO (LS.R 6, LS.Sym 6)
+testUKFPredictL1 = do
+  (n, u) <- testUKFL
+  print $ LS.dvmap exp n
+  (m, v) <- bazL (n, LS.sym $ LS.matrix bigQ)
+  -- (m, v) <- bazL (n, u)
+  return (LS.dvmap exp m, v)
+
+testUKFL1 :: IO (LS.R 6, LS.Sym 6)
+testUKFL1 = do
+  mv <- testUKFL
+  -- trace (show mv) $ return ()
+  barL mv ((LS.vector $ map log [70.2, 9.8]) :: LS.R 2)
+
+testUKFL2 :: IO (LS.R 6, LS.Sym 6)
+testUKFL2 = do
+  mv <- testUKFL1
+  barL mv ((LS.vector $ map log [77.4, 35.2]) :: LS.R 2)
+
 
 testUKF :: IO (LS.R 6, LS.Sym 6)
 testUKF = bar (LS.vector [0.5, 0.025, 0.8, 0.025, 4.0, 30.0], LS.sym $ LS.matrix bigQ)
