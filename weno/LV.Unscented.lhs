@@ -67,6 +67,8 @@ module LotkaVolterra (main) where
 import Prelude as P
 
 import           Numeric.LinearAlgebra
+import qualified Numeric.LinearAlgebra.Static as LS
+import           GHC.TypeNats
 import           Numeric.Sundials
 
 import           Control.Exception
@@ -93,9 +95,11 @@ import           System.IO.Unsafe (unsafePerformIO)
 import qualified Data.Foldable as F
 
 import           Numeric.Particle
+import           Numeric.Kalman
 import           Data.Random.Distribution.MultivariateNormal ( Normal(..) )
 import qualified Data.Random.Distribution.Normal as RN
 import qualified Data.Random as R
+import           Control.Monad.State ( evalState, replicateM )
 
 import Debug.Trace
 \end{code}
@@ -436,20 +440,43 @@ bigR = sym $ (2><2) [ 32.0e-1, 0.0,
                       0.0,    32.0e-1
                     ]
 
+bigRL :: Herm Double
+bigRL = sym $ (2><2) [ 1.0e-1, 0.0,
+                       0.0,    1.0e-1
+                     ]
+
 scanMapM :: Monad m => (s -> a -> m s) -> (s -> m b) -> s -> V.Vector a -> m (V.Vector b)
 scanMapM f g !s0 !xs
   | V.null xs = do
-    u <- g s0
-    return $ V.singleton u
+    r <- g s0
+    return $ V.singleton r
   | otherwise = do
     s <- f s0 (V.head xs)
-    u <- g s0
-    liftM (u `V.cons`) (scanMapM f g s (V.tail xs))
+    r <- g s0
+    liftM (r `V.cons`) (scanMapM f g s (V.tail xs))
+
+test = do
+  is <- initParticles
+  js <- runPF stateUpdate measureOp weight is
+              (SystemObs {obsHares =  snd $ fst (predPreyObs!!1),
+                          obsLynxes = snd $ snd (predPreyObs!!1)
+                         })
+  print $ (* (1 / (fromIntegral nParticles))) $ sum $ V.map hares js
+  print $ (* (1 / (fromIntegral nParticles))) $ sum $ V.map lynxes js
+  ks <- runPF stateUpdate measureOp weight js
+              (SystemObs {obsHares =  snd $ fst (predPreyObs!!2),
+                          obsLynxes = snd $ snd (predPreyObs!!2)
+                         })
+  print $ (* (1 / (fromIntegral nParticles))) $ sum $ V.map hares ks
+  print $ (* (1 / (fromIntegral nParticles))) $ sum $ V.map lynxes ks
+  foo <- scanMapM (runPF stateUpdate measureOp weight) return is predPreyObs'
+  let as = V.map (\ls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map hares ls) foo
+  print as
 
 lotkaVolterra3 :: [Double] -> [Double] -> OdeProblem
 lotkaVolterra3 ts s = -- trace (show r ++ " " ++ show y) $
   emptyOdeProblem
-  { odeRhs = odeRhsPure $ \t x -> fromList (dzdt (Rate (u!!0) (u!!1) (u!!2) (u!!3)) t (toList x))
+  { odeRhs = odeRhsPure $ \t x -> fromList (dzdt (Rate (r!!0) (r!!1) (r!!2) (r!!3)) t (toList x))
   , odeJacobian = Nothing
   , odeEventHandler = nilEventHandler
   , odeMaxEvents = 0
@@ -458,10 +485,21 @@ lotkaVolterra3 ts s = -- trace (show r ++ " " ++ show y) $
   , odeTolerances = defaultTolerances
   }
   where
-    u = coerce $ take 4 $ drop 2 s
+    r = coerce $ take 4 $ drop 2 s
     y = take 2 $ s
 
-sol3 :: MonadIO m => [Double] -> [Double] -> m (Matrix Double)
+-- lotkaVolterra'' :: [Double] -> SystemState Double -> OdeProblem
+-- lotkaVolterra'' ts s = emptyOdeProblem
+--   { odeRhs = odeRhsPure $ \t x -> fromList (dzdt (meanRate {theta4 = coerce $ gamma s}) t (toList x))
+--   , odeJacobian = Nothing
+--   , odeEventHandler = nilEventHandler
+--   , odeMaxEvents = 0
+--   , odeInitCond = vector [hares s, lynxes s]
+--   , odeSolTimes = vector ts
+--   , odeTolerances = defaultTolerances
+--   }
+
+-- sol3 :: [Double] -> [Double] -> IO (Matrix Double)
 sol3 ts s = do
   -- handleScribe <- mkHandleScribe ColorIfTerminal stderr (permitItem InfoS) V2
   -- logEnv <- registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "namespace" "devel"
@@ -469,6 +507,81 @@ sol3 ts s = do
   case w of
     Left e  -> error $ show e
     Right y -> return (solutionMatrix y)
+
+foo :: forall m n p . (KnownNat m, KnownNat n, KnownNat (n - m), m <= n, MonadIO p)
+    => (LS.R n, LS.Sym n)
+    -> LS.R m
+    -> p (LS.R n, LS.Sym n)
+foo = runUKFM measure bigRS evolveM bigPS undefined
+  where
+    measure :: b -> LS.R n -> LS.R m
+    measure = const (LS.unrow . fst. LS.splitCols . LS.row)
+
+    bigRS :: b -> LS.Sym m
+    bigRS = const (LS.sym $ LS.matrix $ concat $ toLists $ unSym bigR)
+
+    evolveM :: b -> LS.R n -> p (LS.R n)
+    evolveM _ x = do m <- sol3 (take 21 us) (toList $ LS.extract x)
+                     let v =  m!20
+                     return (LS.vector [v!0, v!1])
+
+    bigPS :: b -> LS.Sym n
+    bigPS = const (LS.sym $ LS.matrix bigQ)
+
+bar :: forall p . (MonadIO p)
+    => (LS.R 6, LS.Sym 6)
+    -> LS.R 2
+    -> p (LS.R 6, LS.Sym 6)
+bar (sm, sv) a = runUKFM measure bigRS evolveM bigPS undefined (sm, sv) a
+  where
+    -- measure :: b -> LS.R n -> LS.R m
+    measure = const (LS.unrow . fst. LS.splitCols . LS.row)
+
+    -- bigRS :: b -> LS.Sym m
+    bigRS = const (LS.sym $ LS.matrix $ concat $ toLists $ unSym bigR)
+
+    -- evolveM :: b -> LS.R n -> p (LS.R n)
+    evolveM _ x = do m <- sol3 (take 21 us) (toList $ LS.extract x)
+                     let v =  m!20
+                         ps :: LS.L 1 4
+                         qs :: LS.L 1 2
+                         (ps, qs) = LS.splitCols $ LS.row sm
+                         urk :: LS.L 1 2
+                         urk = LS.matrix [v!0, v!1]
+                         eek :: LS.L 1 6
+                         eek = ps LS.||| urk
+                     return $ LS.unrow eek -- ((LS.vector [v!0, v!1]) :: LS.R 6)
+
+    -- bigPS :: b -> LS.Sym n
+    bigPS = const bigQ6
+
+barL :: forall p . (MonadIO p)
+    => (LS.R 6, LS.Sym 6)
+    -> LS.R 2
+    -> p (LS.R 6, LS.Sym 6)
+barL (sm, sv) a = runUKFM measure bigRS evolveM bigPS undefined (sm, sv) a
+  where
+    -- measure :: b -> LS.R n -> LS.R m
+    measure = const (LS.unrow . fst. LS.splitCols . LS.row)
+
+    -- bigRS :: b -> LS.Sym m
+    bigRS = const (LS.sym $ LS.matrix $ concat $ toLists $ unSym bigR)
+
+    -- evolveM :: b -> LS.R n -> p (LS.R n)
+    evolveM _ x = do let y = LS.dvmap exp x
+                     m <- sol3 (take 21 us) (toList $ LS.extract y)
+                     let v =  m!20
+                         ps :: LS.L 1 4
+                         qs :: LS.L 1 2
+                         (ps, qs) = LS.splitCols $ LS.row sm
+                         urk :: LS.L 1 2
+                         urk = LS.dmmap log $ LS.matrix [v!0, v!1]
+                         eek :: LS.L 1 6
+                         eek = ps LS.||| urk
+                     return $ LS.unrow eek -- ((LS.vector [v!0, v!1]) :: LS.R 6)
+
+    -- bigPS :: b -> LS.Sym n
+    bigPS = const bigQ6
 
 m0L :: [Double]
 m0L = fmap log [0.5, 0.025, 0.8, 0.025, 30, 4]
@@ -493,12 +606,12 @@ stateUpdateL ps = do
 
   let ms :: V.Vector (Vector Double)
       ms = V.map (log . (!20)) qs
-      ns = V.zipWith3 (\p q u -> SystemState1 { alpha1  = u!0 + alpha1 q
-                                              , beta1   = u!1 + beta1 q
-                                              , delta1  = u!2 + delta1 q
-                                              , gamma1  = u!3 + gamma1 q
-                                              , hares1  = u!4 + p!0
-                                              , lynxes1 = u!5 + p!1
+      ns = V.zipWith3 (\p q r -> SystemState1 { alpha1  = r!0 + alpha1 q
+                                              , beta1   = r!1 + beta1 q
+                                              , delta1  = r!2 + delta1 q
+                                              , gamma1  = r!3 + gamma1 q
+                                              , hares1  = r!4 + p!0
+                                              , lynxes1 = r!5 + p!1
                                               })
                       ms ps rr
   return ns
@@ -506,10 +619,61 @@ stateUpdateL ps = do
 testL :: IO (V.Vector Double, V.Vector Double, V.Vector (Particles (SystemState1 Double)))
 testL = do
   is <- initParticlesL
+  js <- runPF stateUpdateL measureOpL weight (V.map (fmap log) is)
+              (SystemObs {obsHares =  snd $ fst (predPreyObs!!1),
+                          obsLynxes = snd $ snd (predPreyObs!!1)
+                         })
+  ks <- runPF stateUpdateL measureOpL weight js
+              (SystemObs {obsHares =  snd $ fst (predPreyObs!!2),
+                          obsLynxes = snd $ snd (predPreyObs!!2)
+                         })
   foo <- scanMapM (runPF stateUpdateL measureOpL weight) return (V.map (fmap log) is) (V.drop 1 predPreyObs')
-  let as = V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map hares1 lls) foo
-  let bs = V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map lynxes1 lls) foo
+  let as = V.map (\ls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map hares1 ls) foo
+  let bs = V.map (\ls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map lynxes1 ls) foo
   return (as, bs, foo)
+
+bazL :: forall p . (MonadIO p)
+    => (LS.R 6, LS.Sym 6)
+    -> p (LS.R 6, LS.Sym 6)
+bazL (sm, sv) = runUKFPredictionM evolveM bigPS undefined (sm, sv)
+  where
+    -- evolveM :: b -> LS.R n -> p (LS.R n)
+    evolveM _ x = do let y = LS.dvmap exp x
+                     m <- sol3 (take 21 us) (toList $ LS.extract y)
+                     let v =  m!20
+                         ps :: LS.L 1 4
+                         qs :: LS.L 1 2
+                         (ps, qs) = LS.splitCols $ LS.row sm
+                         urk :: LS.L 1 2
+                         urk = LS.dmmap log $ LS.matrix [v!0, v!1]
+                         eek :: LS.L 1 6
+                         eek = ps LS.||| urk
+                     trace ("\nbazL " ++ {- show y ++ " " ++ -} show (v)) $ return ()
+                     return $ LS.unrow eek -- ((LS.vector [v!0, v!1]) :: LS.R 6)
+
+    -- bigPS :: b -> LS.Sym n
+    bigPS = const bigQ6
+
+baz :: forall p . (MonadIO p)
+    => (LS.R 6, LS.Sym 6)
+    -> p (LS.R 6, LS.Sym 6)
+baz (sm, sv) = runUKFPredictionM evolveM bigPS undefined (sm, sv)
+  where
+    -- evolveM :: b -> LS.R n -> p (LS.R n)
+    evolveM _ x = do m <- sol3 (take 21 us) (toList $ LS.extract x)
+                     let v =  m!20
+                         ps :: LS.L 1 4
+                         qs :: LS.L 1 2
+                         (ps, qs) = LS.splitCols $ LS.row sm
+                         urk :: LS.L 1 2
+                         urk = LS.matrix [v!0, v!1]
+                         eek :: LS.L 1 6
+                         eek = ps LS.||| urk
+                     trace (show x ++ " " ++ show v) $ return ()
+                     return $ LS.unrow eek -- ((LS.vector [v!0, v!1]) :: LS.R 6)
+
+    -- bigPS :: b -> LS.Sym n
+    bigPS = const bigQ6
 
 bigQ :: [Double]
 bigQ = [ 1.0e-2, 0.0,    0.0,    0.0,    0.0,    0.0
@@ -519,6 +683,50 @@ bigQ = [ 1.0e-2, 0.0,    0.0,    0.0,    0.0,    0.0
        , 0.0,    0.0,    0.0,    0.0,    1.0e-1, 0.0
        , 0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-1
        ]
+
+bigQ6 :: LS.Sym 6
+bigQ6 = LS.sym $ LS.matrix bigQ
+
+testUKFPredict :: IO (LS.R 6, LS.Sym 6)
+testUKFPredict = baz (LS.vector [0.5, 0.025, 0.8, 0.025, 4, 30], LS.sym $ LS.matrix bigQ)
+
+testUKFPredictL :: IO (LS.R 6, LS.Sym 6)
+testUKFPredictL = do
+  (m, v) <- bazL (LS.vector $ map log [0.5, 0.025, 0.8, 0.025, 30, 4], LS.sym $ LS.matrix bigQ)
+  return (LS.dvmap exp m, v)
+
+testUKFL :: IO (LS.R 6, LS.Sym 6)
+testUKFL = barL (LS.vector $ map log [0.5, 0.025, 0.8, 0.025, 30.0, 4.0], LS.sym $ LS.matrix bigQ)
+              ((LS.vector $ map log [47.2, 6.1]) :: LS.R 2)
+
+testUKFPredictL1 :: IO (LS.R 6, LS.Sym 6)
+testUKFPredictL1 = do
+  (n, u) <- testUKFL
+  print $ LS.dvmap exp n
+  (m, v) <- bazL (n, LS.sym $ LS.matrix bigQ)
+  -- (m, v) <- bazL (n, u)
+  return (LS.dvmap exp m, v)
+
+testUKFL1 :: IO (LS.R 6, LS.Sym 6)
+testUKFL1 = do
+  mv <- testUKFL
+  -- trace (show mv) $ return ()
+  barL mv ((LS.vector $ map log [70.2, 9.8]) :: LS.R 2)
+
+testUKFL2 :: IO (LS.R 6, LS.Sym 6)
+testUKFL2 = do
+  mv <- testUKFL1
+  barL mv ((LS.vector $ map log [77.4, 35.2]) :: LS.R 2)
+
+
+testUKF :: IO (LS.R 6, LS.Sym 6)
+testUKF = bar (LS.vector [0.5, 0.025, 0.8, 0.025, 4.0, 30.0], LS.sym $ LS.matrix bigQ)
+              ((LS.vector [6.1, 47.2]) :: LS.R 2)
+
+testUKF1 :: IO (LS.R 6, LS.Sym 6)
+testUKF1 = do
+  mv <- testUKF
+  bar mv ((LS.vector [9.8, 70.2]) :: LS.R 2)
 \end{code}
 %endif
 
