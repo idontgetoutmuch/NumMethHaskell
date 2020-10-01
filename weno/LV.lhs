@@ -40,8 +40,97 @@ where $x$ is the number of prey, $y$ is the number of predators,
   predator, $\delta$ is the predator birth rate per prey and $\gamma$
   is the predator death rate.
 
-Let us assume that $\alpha, \beta, \delta$ are given but that we wish
- to estimate $\gamma$ from the observed data.
+\subsection{Solving Lotka-Volterra}
+
+We can solve the Lotka-Volterra model using the Haskell bindings to
+  SUNDIALS. The use of the {\em{Bogacki Shampine}} method is entirely
+  arbitrary. The results are shown in Figure \ref{fig:examplelvsolution_0}.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{diagrams/ExampleLvSolution.png}
+\caption{Example Model Result}
+\label{fig:examplelvsolution_0}
+\end{figure}
+
+\section{Estimating the Parameters}
+
+How might we estimate $\alpha, \beta, \delta$ and $\gamma$ from the
+ observed data?
+
+One way is to augment the model. The model does take into account that
+  hare and lynx birth and death rates might vary from year to
+  year. For example, the weather may determine the rates to some
+  extent. Rather than try to expand the model to include the weather
+  we can capture the fact that we don't know what the parameters are
+  and also our feeling that the further we go into the future the less
+  certain we are by modelling the parameters as Brownian Motion offset
+  by some value:
+
+$$
+\mathrm{d}\mathbf{\Phi} = \mathbf{\sigma}\mathrm{d}\mathbf{W}_t
+$$
+
+where
+
+$$
+\mathbf{\Phi} = \begin{bmatrix} \alpha \\ \beta \\ \delta \\ \gamma \end{bmatrix}
+$$
+
+and $\mathbf{W}_t$ is Brownian Motion\footnote{As is well known,
+ Brownian Motion is nowhere differentiable and this is a standard way
+ of writing what should be an integral equation.}.
+
+We should also accept that the deterministic part of the model may not
+ explain everything. Thus the enhanced model is now
+
+$$
+\begin{aligned}
+\frac{\mathrm{d}x}{\mathrm{d}t} &= \alpha x - \beta x y + \sigma_x\mathrm{d}{W}^x_t\\
+\frac{\mathrm{d}y}{\mathrm{d}t} &= \delta x y - \gamma y  + \sigma_y\mathrm{d}{W}^y_t\\
+\mathrm{d}\mathbf{\Phi}         &= \mathbf{\sigma}\mathrm{d}\mathbf{W}_t
+\end{aligned}
+$$
+
+where $W^l_t$ and $W^h_t$ are Brownian Motion.
+
+Of course, we can estimate the parameters in many other ways, each
+ with its own, possibly augmented, model.
+
+We still have to explain how to handle observations. The observation
+ model is almost trivial:
+
+$$
+\begin{aligned}
+u_t &= x_t + \sigma_u W^u_t \\
+v_t &= y_t + \sigma_v W^v_t
+\end{aligned}
+$$
+
+where again $W^l_t$ and $W^h_t$ are Brownian Motion, this time
+ independent from the state model Brownian Motions.\footnote{There is
+ no need for the noise in the state model or the observation model to
+ be normal or additive but trying to make everything as general as
+ possible will only obscure matters.}.
+
+What we want to estimate is $x_t, y_t, \alpha_t, \beta_t, delta_t$ and
+ $\gamma_t$ given $u_t$ and $v_t$, the numbers of hares and lynxes
+ given at times $t_0, t_1, \ldots, t_N$.
+
+Rather than write down the mathematical theory for this which involves
+       a lot of technical machinery, the basic idea is to use the
+       state equations to move the state forward in time and then
+       apply a Bayesian update step to the prior distribution just
+       before an observation to produce a posterior distribution just
+       after the observation. Note that the state is actually a
+       distribution. One way of approximating this distribution is to
+       use a set of samples. This is generally known as particle
+       filtering. We could also represent the distribution using some
+       well known distribution e.g. the Normal distribution. This is
+       known as Kalman filtering\footnote{Strictly speaking, we would
+       have to use extended or unscented Kalman filtering as vanilla
+       Kalman requires the state update is linear --- clearly not the
+       case here.}.
 
 %if False
 \begin{code}
@@ -124,18 +213,6 @@ predPreyObs' = unsafePerformIO $
 \end{code}
 %endif
 
-\subsection{Solving Lotka-Volterra}
-
-We can solve the Lotka-Volterra model using the Haskell bindings to
-  SUNDIALS. The use of the {\em{Bogacki Shampine}} method is entirely
-  arbitrary. The results are shown in Figure \ref{fig:examplelvsolution_0}.
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.8\textwidth]{diagrams/ExampleLvSolution.png}
-\caption{Example Model Result}
-\label{fig:examplelvsolution_0}
-\end{figure}
 
 %if False
 \begin{code}
@@ -214,6 +291,11 @@ main = do
       ds1 = concat $ zipWith (\t vs -> zip (repeat t) vs) ts preDs1
       es1 = map fst ds1
       fs1 = map snd ds1
+      -- preGammas1 = V.toList $ V.map V.toList $ V.map (V.map (exp . gamma1)) cs1
+      -- gammas1 = concat $ zipWith (\t vs -> zip (repeat t) vs) ts preGammas1
+      gammas1 = V.toList $
+                V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map gamma1 lls) cs1
+
   R.runRegion $ do
     _ <- [r| library(ggplot2) |]
     c0 <- [r| ggplot() |]
@@ -222,12 +304,22 @@ main = do
     c3 <- [r| c2_hs + ylab("Animals (000s)") |]
     c4 <- [r| c3_hs + labs(colour = "Species") |]
     c5 <- [r| c4_hs + theme(plot.title = element_text(hjust = 0.5)) |]
-    c6 <- foldM (\c (n, rr, tt) -> do
+    _  <- foldM (\c (n, rr, tt) -> do
                         [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
-                c5 ([ ("Hares", hs, ts), ("Lynxes", ks, ts)
-                    , ("HaresL", (V.toList as1), ts), ("LynxesL", (V.toList bs1), ts) ] :: [(String, [Double], [Double])])
-    _ <-  [r| c6_hs + geom_point(aes(x=es1_hs, y=fs1_hs)) |]
+                c5 ([ ("Hares", hs, ts), ("Lynxes", ks, ts) ] :: [(String, [Double], [Double])])
     _ <-  [r| ggsave(filename="diagrams/HudsonBay.png") |]
+
+    e1 <- [r| c0_hs + ggtitle("Hares and Lynxes") |]
+    e2 <- [r| e1_hs + xlab("Year") |]
+    e3 <- [r| e2_hs + ylab("Animals (000s)") |]
+    e4 <- [r| e3_hs + labs(colour = "Species") |]
+    e5 <- [r| e4_hs + theme(plot.title = element_text(hjust = 0.5)) |]
+    e6 <- foldM (\c (n, rr, tt) -> do
+                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                e5 ([ ("Hares", hs, ts), ("Lynxes", ks, ts)
+                    , ("HaresL", (V.toList as1), ts), ("LynxesL", (V.toList bs1), ts) ] :: [(String, [Double], [Double])])
+    _ <-  [r| e6_hs + geom_point(aes(x=es1_hs, y=fs1_hs)) |]
+    _ <-  [r| ggsave(filename="diagrams/HudsonBayFit.png") |]
 
     -- c6  <- foldM (\c (n, rr, tt) -> do
     --                     [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
@@ -236,15 +328,15 @@ main = do
     -- _ <-  [r| c6_hs + geom_point(aes(x=es_hs, y=fs_hs)) |]
     -- _ <-  [r| ggsave(filename="diagrams/Posterior.png") |]
 
-    -- d1 <- [r| c0_hs + ggtitle("Hares and Lynxes") |]
-    -- d2 <- [r| d1_hs + xlab("Year") |]
-    -- d3 <- [r| d2_hs + ylab("Animals (000s)") |]
-    -- d4 <- [r| d3_hs + labs(colour = "Species") |]
-    -- d5 <- [r| d4_hs + theme(plot.title = element_text(hjust = 0.5)) |]
-    -- _  <- foldM (\c (n, rr, tt) -> do
-    --                     [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
-    --             c5 ([("Gamma", cs, ts)] :: [(String, [Double], [Double])])
-    -- _  <-  [r| ggsave(filename="diagrams/Gamma.png") |]
+    d1 <- [r| c0_hs + ggtitle("Hares and Lynxes") |]
+    d2 <- [r| d1_hs + xlab("Year") |]
+    d3 <- [r| d2_hs + ylab("Animals (000s)") |]
+    d4 <- [r| d3_hs + labs(colour = "Species") |]
+    d5 <- [r| d4_hs + theme(plot.title = element_text(hjust = 0.5)) |]
+    _  <- foldM (\c (n, rr, tt) -> do
+                        [r| d5_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                c5 ([("Gamma", gammas1, ts)] :: [(String, [Double], [Double])])
+    _  <-  [r| ggsave(filename="diagrams/Gamma.png") |]
 
     -- _  <- foldM (\c (n, rr, tt) -> do
     --                     [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
