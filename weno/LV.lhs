@@ -1,8 +1,18 @@
 \documentclass{article}
 \usepackage{amsmath}
 \usepackage{graphicx}
+\usepackage{hyperref}
+\setlength{\parskip}{\medskipamount}
+\setlength{\parindent}{0pt}
 %include polycode.fmt
 %options ghci
+
+%format alpha = "\alpha"
+%format beta  = "\beta"
+%format delta = "\delta"
+%format gamma = "\gamma"
+%format bigQ  = "Q"
+%format m0    = "m_0"
 
 \title{Filtering Estimation Example}
 \author{Dominic Steinitz}
@@ -11,6 +21,84 @@
 \begin{document}
 
 \maketitle
+
+%if False
+\begin{code}
+{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE TypeOperators     #-}
+{-# LANGUAGE NumDecimals       #-}
+{-# LANGUAGE OverloadedLists   #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes       #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DeriveFunctor        #-}
+{-# LANGUAGE DeriveFoldable        #-}
+
+{-# OPTIONS_GHC -Wall          #-}
+
+module LotkaVolterra (main) where
+
+import Prelude as P
+
+import           Numeric.LinearAlgebra
+import           Numeric.Sundials
+
+import           Control.Exception
+import           Katip
+import           Katip.Monadic
+import           System.IO (stderr)
+import           GHC.Int
+
+import           Foreign.C.Types
+import           Data.Coerce
+
+import           Control.Monad.Writer
+
+import qualified Data.Vector as V
+
+import           Data.List (transpose)
+
+import qualified Language.R as R
+import           Language.R.QQ
+
+import           Frames
+import           Control.Lens((^.))
+import           System.IO.Unsafe (unsafePerformIO)
+import qualified Data.Foldable as F
+
+import           Numeric.Particle
+import           Data.Random.Distribution.MultivariateNormal ( Normal(..) )
+import qualified Data.Random as R
+\end{code}
+%endif
+
+%if False
+\begin{code}
+tableTypes "NoisyObs" "lynx_hare_df.csv"
+
+loadNoisyObs :: IO (Frame NoisyObs)
+loadNoisyObs = inCoreAoS (readTable "lynx_hare_df.csv")
+
+predPreyObs :: [((Int, Double), (Int, Double))]
+predPreyObs = unsafePerformIO $
+          do xs <- loadNoisyObs
+             let ys = F.toList $ fmap (\u -> ((u ^. year), (u ^. hare))) xs
+             let zs = F.toList $ fmap (\u -> ((u ^. year), (u ^. lynx))) xs
+             return $ zip ys zs
+
+predPreyObs' :: V.Vector (SystemObs Double)
+predPreyObs' = unsafePerformIO $
+          do xs <- loadNoisyObs
+             let ys = V.fromList $ F.toList $ fmap (^. hare) xs
+                 zs = V.fromList $ F.toList $ fmap (^. lynx) xs
+             return $ V.zipWith SystemObs ys zs
+\end{code}
+%endif
 
 \section{Introduction}
 
@@ -132,84 +220,124 @@ Rather than write down the mathematical theory for this which involves
        Kalman requires the state update is linear --- clearly not the
        case here.}.
 
-%if False
+\section{Using a Filtering Library}
+
+We can use the Haskell library
+\href{https://hackage.haskell.org/package/kalman}{kalman} which contains a function:
+
+\eval{:t runPF}
+
+which we can read as a function which takes a state update function
+ |Particles a -> m (Particles a)|, an observation function |Particles a -> Particles b|,
+ a measurement function for the observations |b -> b -> Double|
+ and returns a function |Particles a -> b -> m (Particles a)|
+ which takes a distribution (the prior) and an observation and
+ returns a new distribution (the posterior)\footnote{The symbol |m|
+ can be ignored --- it restricts how |runPF| is used to prevent
+ runtime errors.}.
+
+Here's the state update notated slightly differently
+
+\begin{gather}
+ \begin{bmatrix}
+    \dot{\alpha} \\
+    \dot{\beta}  \\
+    \dot{\delta} \\
+    \dot{\gamma} \\
+    \dot{x} \\
+    \dot{y}
+\end{bmatrix}
+ =
+\begin{bmatrix}
+    0 \\
+    0 \\
+    0 \\
+    0 \\
+    \alpha x - \beta x y \\
+    \delta x y - \gamma y
+\end{bmatrix}
++
+\mathbf{Q}\mathbf{W}_t
+\end{gather}
+
+where $\mathbf{W}$ is Brownian Motion and $\mathbf{Q}$ is a covariance matrix.
+
+There is no reason to expect any correlations so informed by the
+  results in
+  \href{https://mc-stan.org/users/documentation/case-studies/lotka-volterra-predator-prey.html}{Predator-Prey
+  Population Dynamics: the Lotka-Volterra model in Stan} let us take
+  the state update covariance to be
+
+$$
+\mathbf{Q} =
+\begin{bmatrix}
+\eval{bigQ!!0}  & \eval{bigQ!!1}  & \eval{bigQ!!2}  & \eval{bigQ!!3}  & \eval{bigQ!!4}  & \eval{bigQ!!5} \\
+\eval{bigQ!!6}  & \eval{bigQ!!7}  & \eval{bigQ!!8}  & \eval{bigQ!!9}  & \eval{bigQ!!10} & \eval{bigQ!!11} \\
+\eval{bigQ!!12} & \eval{bigQ!!13} & \eval{bigQ!!14} & \eval{bigQ!!15} & \eval{bigQ!!16} & \eval{bigQ!!17} \\
+\eval{bigQ!!18} & \eval{bigQ!!19} & \eval{bigQ!!20} & \eval{bigQ!!21} & \eval{bigQ!!22} & \eval{bigQ!!23} \\
+\eval{bigQ!!24} & \eval{bigQ!!25} & \eval{bigQ!!26} & \eval{bigQ!!27} & \eval{bigQ!!28} & \eval{bigQ!!29} \\
+\eval{bigQ!!30} & \eval{bigQ!!31} & \eval{bigQ!!32} & \eval{bigQ!!33} & \eval{bigQ!!34} & \eval{bigQ!!35}
+\end{bmatrix}
+$$
+
+We take the observation noise to be given by
+
+$$
+\mathbf{R} =
+\begin{bmatrix}
+\eval{(unSym bigR)!0!0} & \eval{(unSym bigR)!0!1} \\
+\eval{(unSym bigR)!1!0} & \eval{(unSym bigR)!1!1}
+\end{bmatrix}
+$$
+
 \begin{code}
-{-# LANGUAGE TypeFamilies      #-}
-{-# LANGUAGE NoImplicitPrelude #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE TypeOperators     #-}
-{-# LANGUAGE NumDecimals       #-}
-{-# LANGUAGE OverloadedLists   #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE QuasiQuotes       #-}
-{-# LANGUAGE TemplateHaskell   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DeriveFunctor        #-}
-{-# LANGUAGE DeriveFoldable        #-}
+stateUpdateL :: Particles (SystemState Double) -> IO (Particles (SystemState Double))
+stateUpdateL ps = do
+  qs <-  V.mapM (sol' (take 21 us)) (V.map (F.toList . fmap exp) ps)
+  rr <- V.replicateM nParticles $
+        R.sample $ R.rvar (Normal (vector (replicate 6 0.0)) (sym $ (6><6) bigQ))
 
-{-# OPTIONS_GHC -Wall          #-}
-
-module LotkaVolterra (main) where
-
-import Prelude as P
-
-import           Numeric.LinearAlgebra
-import           Numeric.Sundials
-
-import           Control.Exception
-import           Katip
-import           Katip.Monadic
-import           System.IO (stderr)
-import           GHC.Int
-
-import           Foreign.C.Types
-import           Data.Coerce
-
-import           Control.Monad.Writer
-
-import qualified Data.Vector as V
-
-import           Data.List (transpose)
-
-import qualified Language.R as R
-import           Language.R.QQ
-
-import           Frames
-import           Control.Lens((^.))
-import           System.IO.Unsafe (unsafePerformIO)
-import qualified Data.Foldable as F
-
-import           Numeric.Particle
-import           Data.Random.Distribution.MultivariateNormal ( Normal(..) )
-import qualified Data.Random as R
+  let ms :: V.Vector (Vector Double)
+      ms = V.map (log . (!20)) qs
+      ns = V.zipWith3 (\p q u -> SystemState { alpha  = u!0 + alpha q
+                                              , beta   = u!1 + beta q
+                                              , delta  = u!2 + delta q
+                                              , gamma  = u!3 + gamma q
+                                              , hares  = u!4 + p!0
+                                              , lynxes = u!5 + p!1
+                                              })
+                      ms ps rr
+  return ns
 \end{code}
-%endif
 
-%if False
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{diagrams/HudsonBayFit.png}
+\caption{Fitting the State}
+\label{fig:fitting_state_0}
+\end{figure}
+
+\subsection{Initial Distributions}
+
+One thing that is still missing from the model are the initial
+ distributions\footnote{This would have been obvious if we had used
+ the integral formulation of what are now stochastic differential
+ equations.}.
+
+We can create initial distributions from a (multivariate) normal
+ distribution with the following mean vector and covariance matrix:
+
 \begin{code}
-tableTypes "NoisyObs" "lynx_hare_df.csv"
+m0 :: [Double]
+m0 = fmap log [0.5, 0.025, 0.8, 0.025, 30, 4]
 
-loadNoisyObs :: IO (Frame NoisyObs)
-loadNoisyObs = inCoreAoS (readTable "lynx_hare_df.csv")
-
-predPreyObs :: [((Int, Double), (Int, Double))]
-predPreyObs = unsafePerformIO $
-          do xs <- loadNoisyObs
-             let ys = F.toList $ fmap (\u -> ((u ^. year), (u ^. hare))) xs
-             let zs = F.toList $ fmap (\u -> ((u ^. year), (u ^. lynx))) xs
-             return $ zip ys zs
-
-predPreyObs' :: V.Vector (SystemObs Double)
-predPreyObs' = unsafePerformIO $
-          do xs <- loadNoisyObs
-             let ys = V.fromList $ F.toList $ fmap (^. hare) xs
-                 zs = V.fromList $ F.toList $ fmap (^. lynx) xs
-             return $ V.zipWith SystemObs ys zs
+initParticles :: R.MonadRandom m =>
+                 m (Particles (SystemState Double))
+initParticles = V.replicateM nParticles $ do
+  x <- R.sample $ R.rvar (Normal (vector m0) (sym $ (6><6) bigQ))
+  return $ fmap exp $
+    SystemState { alpha  = x!0, beta   = x!1, delta  = x!2, gamma  = x!3, hares  = x!4, lynxes = x!5 }
 \end{code}
-%endif
-
 
 %if False
 \begin{code}
@@ -265,12 +393,12 @@ main = do
   y <- sol (hs!!0) (ks!!0)
   let rs = transpose $ toLists y
   (as1, bs1, cs1) <- testL
-  let preDs1 = V.toList $ V.map V.toList $ V.map (V.map (exp . hares1)) cs1
+  let preDs1 = V.toList $ V.map V.toList $ V.map (V.map (exp . hares)) cs1
       ds1 = concat $ zipWith (\t ws -> zip (repeat t) ws) ts preDs1
       es1 = map fst ds1
       fs1 = map snd ds1
       gammas1 = V.toList $
-                V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map gamma1 lls) cs1
+                V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map gamma lls) cs1
 
   R.runRegion $ do
     _ <- [r| library(ggplot2) |]
@@ -352,42 +480,10 @@ defaultTolerances = Tolerances
 \end{code}
 %endif
 
-\subsection{Sampling Potential Paths}
-
-We can simulate a whole set of trajectories by sampling from
- ${\mathcal{N}}(\mu, P)$ where $\mu = [\mu_h, \mu_l, m_\gamma]$ and
-
-$$
-P =
-\begin{bmatrix}
-\sigma^2_h &        0.0 &             0.0 \\
-0.0 &        \sigma^2_l &             0.0 \\
-0.0 &               0.0 &  \sigma^2_\gamma
-\end{bmatrix}
-$$
-
-A set of \eval{nParticles} runs is shown in Figure~\ref{fig:lvparticles_0} with
-$[\mu_h, \mu_l, m_\gamma] = \eval{m0}$.
-
-$$
-P =
-\begin{bmatrix}
-\eval{(unSym bigP)!0!0} &                     0.0 &                     0.0 \\
-0.0                     & \eval{(unSym bigP)!1!1} &                     0.0 \\
-0.0                     &                     0.0 & \eval{(unSym bigP)!2!2}
-\end{bmatrix}
-$$
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.8\textwidth]{diagrams/LvParticles.png}
-\caption{Particle Paths}
-\label{fig:lvparticles_0}
-\end{figure}
 
 %if False
 \begin{code}
-data SystemState1 a = SystemState1 { hares1  :: a, lynxes1  :: a, alpha1 :: a, beta1 :: a, delta1 :: a, gamma1 :: a}
+data SystemState a = SystemState { hares  :: a, lynxes  :: a, alpha :: a, beta :: a, delta :: a, gamma :: a}
   deriving (Show, Functor, Foldable)
 
 data SystemObs a = SystemObs { obsHares  :: a, obsLynxes :: a}
@@ -396,8 +492,8 @@ data SystemObs a = SystemObs { obsHares  :: a, obsLynxes :: a}
 nParticles :: Int
 nParticles = 1000
 
-measureOpL :: Particles (SystemState1 Double) -> Particles (SystemObs Double)
-measureOpL = V.map (\s -> SystemObs { obsHares = exp $ hares1 s, obsLynxes = exp $ lynxes1 s})
+measureOpL :: Particles (SystemState Double) -> Particles (SystemObs Double)
+measureOpL = V.map (\s -> SystemObs { obsHares = exp $ hares s, obsLynxes = exp $ lynxes s})
 
 weight :: SystemObs Double -> SystemObs Double -> Double
 weight obs predicted = R.pdf (Normal xs bigR) ys
@@ -406,8 +502,8 @@ weight obs predicted = R.pdf (Normal xs bigR) ys
     ys = vector [obsHares predicted, obsLynxes predicted]
 
 bigR :: Herm Double
-bigR = sym $ (2><2) [ 32.0e-1, 0.0,
-                      0.0,    32.0e-1
+bigR = sym $ (2><2) [ 10.0e-1, 0.0,
+                      0.0,    10.0e-1
                     ]
 
 scanMapM :: Monad m => (s -> a -> m s) -> (s -> m b) -> s -> V.Vector a -> m (V.Vector b)
@@ -420,8 +516,8 @@ scanMapM f g !s0 !xs
     u <- g s0
     liftM (u `V.cons`) (scanMapM f g s (V.tail xs))
 
-lotkaVolterra3 :: [Double] -> [Double] -> OdeProblem
-lotkaVolterra3 ts s = -- trace (show r ++ " " ++ show y) $
+lotkaVolterra' :: [Double] -> [Double] -> OdeProblem
+lotkaVolterra' ts s =
   emptyOdeProblem
   { odeRhs = odeRhsPure $ \t x -> fromList (dzdt (Rate (u!!0) (u!!1) (u!!2) (u!!3)) t (toList x))
   , odeJacobian = Nothing
@@ -435,54 +531,19 @@ lotkaVolterra3 ts s = -- trace (show r ++ " " ++ show y) $
     u = coerce $ take 4 $ drop 2 s
     y = take 2 $ s
 
-sol3 :: MonadIO m => [Double] -> [Double] -> m (Matrix Double)
-sol3 ts s = do
-  -- handleScribe <- mkHandleScribe ColorIfTerminal stderr (permitItem InfoS) V2
-  -- logEnv <- registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "namespace" "devel"
-  w <- runNoLoggingT $ solve (defaultOpts BOGACKI_SHAMPINE_4_2_3) (lotkaVolterra3 ts s)
+sol' :: MonadIO m => [Double] -> [Double] -> m (Matrix Double)
+sol' ts s = do
+  w <- runNoLoggingT $ solve (defaultOpts BOGACKI_SHAMPINE_4_2_3) (lotkaVolterra' ts s)
   case w of
     Left e  -> error $ show e
     Right y -> return (solutionMatrix y)
 
-m0L :: [Double]
-m0L = fmap log [0.5, 0.025, 0.8, 0.025, 30, 4]
-
-initParticlesL :: R.MonadRandom m =>
-                 m (Particles (SystemState1 Double))
-initParticlesL = V.replicateM nParticles $ do
-  rr <- R.sample $ R.rvar (Normal (vector m0L) (sym $ (6><6) bigQ))
-  return $ fmap exp $ SystemState1 { alpha1  = rr!0
-                                   , beta1   = rr!1
-                                   , delta1  = rr!2
-                                   , gamma1  = rr!3
-                                   , hares1  = rr!4
-                                   , lynxes1 = rr!5
-                                   }
-
-stateUpdateL :: Particles (SystemState1 Double) -> IO (Particles (SystemState1 Double))
-stateUpdateL ps = do
-  qs <-  V.mapM (sol3 (take 21 us)) (V.map (F.toList . fmap exp) ps)
-  rr <- V.replicateM nParticles $
-        R.sample $ R.rvar (Normal (vector (replicate 6 0.0)) (sym $ (6><6) bigQ))
-
-  let ms :: V.Vector (Vector Double)
-      ms = V.map (log . (!20)) qs
-      ns = V.zipWith3 (\p q u -> SystemState1 { alpha1  = u!0 + alpha1 q
-                                              , beta1   = u!1 + beta1 q
-                                              , delta1  = u!2 + delta1 q
-                                              , gamma1  = u!3 + gamma1 q
-                                              , hares1  = u!4 + p!0
-                                              , lynxes1 = u!5 + p!1
-                                              })
-                      ms ps rr
-  return ns
-
-testL :: IO (V.Vector Double, V.Vector Double, V.Vector (Particles (SystemState1 Double)))
+testL :: IO (V.Vector Double, V.Vector Double, V.Vector (Particles (SystemState Double)))
 testL = do
-  is <- initParticlesL
+  is <- initParticles
   foo <- scanMapM (runPF stateUpdateL measureOpL weight) return (V.map (fmap log) is) (V.drop 1 predPreyObs')
-  let as = V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map hares1 lls) foo
-  let bs = V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map lynxes1 lls) foo
+  let as = V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map hares lls) foo
+  let bs = V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map lynxes lls) foo
   return (as, bs, foo)
 
 bigQ :: [Double]
@@ -495,22 +556,5 @@ bigQ = [ 1.0e-2, 0.0,    0.0,    0.0,    0.0,    0.0
        ]
 \end{code}
 %endif
-
-model {
-  theta[{1, 3}] ~ normal(1, 0.5);
-  theta[{2, 4}] ~ normal(0.05, 0.05);
-  sigma ~ lognormal(-1, 1);
-  z_init ~ lognormal(log(10), 1);
-  for (k in 1:2) {
-    y_init[k] ~ lognormal(log(z_init[k]), sigma[k]);
-    y[ , k] ~ lognormal(log(z[, k]), sigma[k]);
-  }
-}
-
-meanRate :: Floating a => Rate a
-meanRate = Rate { theta1 = 0.5, theta2 = 0.025, theta3 = 0.8, theta4 = 0.025 }
-
-m0 :: Vector Double
-m0 = vector [30.0, 4.0, 2.5e-2]
 
 \end{document}
