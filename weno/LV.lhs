@@ -183,10 +183,7 @@ import qualified Data.Foldable as F
 
 import           Numeric.Particle
 import           Data.Random.Distribution.MultivariateNormal ( Normal(..) )
-import qualified Data.Random.Distribution.Normal as RN
 import qualified Data.Random as R
-
-import Debug.Trace
 \end{code}
 %endif
 
@@ -267,32 +264,11 @@ main = do
       ks = map snd $ map snd predPreyObs
   y <- sol (hs!!0) (ks!!0)
   let rs = transpose $ toLists y
-  is <- initParticles
-  ys :: V.Vector (Matrix Double) <-  V.mapM sol' is
-  let ss = V.map (transpose . toLists) ys
-      tt :: V.Vector [(String, [Double], [Double])]
-      tt = V.map (\ss -> [("Predicted Hares",  ss!!0, vs),
-                          ("Predicted Lynxes", ss!!1, vs)]) ss
-      uu = concat $ V.toList tt
-  is <- initParticles
-  foo <- scanMapM (runPF stateUpdate measureOp weight) return is (V.tail predPreyObs')
-  let as = take 21 $ V.toList $
-           V.map (\ls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map hares ls) foo
-      bs = take 21 $ V.toList $
-           V.map (\ls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map lynxes ls) foo
-      cs = take 21 $ V.toList $
-           V.map (\ls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map gamma ls) foo
-      preDs = V.toList $ V.map V.toList $ V.map (V.map hares) foo
-      ds = concat $ zipWith (\t vs -> zip (repeat t) vs) ts preDs
-      es = map fst ds
-      fs = map snd ds
   (as1, bs1, cs1) <- testL
   let preDs1 = V.toList $ V.map V.toList $ V.map (V.map (exp . hares1)) cs1
-      ds1 = concat $ zipWith (\t vs -> zip (repeat t) vs) ts preDs1
+      ds1 = concat $ zipWith (\t ws -> zip (repeat t) ws) ts preDs1
       es1 = map fst ds1
       fs1 = map snd ds1
-      -- preGammas1 = V.toList $ V.map V.toList $ V.map (V.map (exp . gamma1)) cs1
-      -- gammas1 = concat $ zipWith (\t vs -> zip (repeat t) vs) ts preGammas1
       gammas1 = V.toList $
                 V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map gamma1 lls) cs1
 
@@ -321,32 +297,21 @@ main = do
     _ <-  [r| e6_hs + geom_point(aes(x=es1_hs, y=fs1_hs)) |]
     _ <-  [r| ggsave(filename="diagrams/HudsonBayFit.png") |]
 
-    -- c6  <- foldM (\c (n, rr, tt) -> do
-    --                     [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
-    --             c5 ([("Hares Obs", hs, ts), ("Lynxes Obs", ks, ts),
-    --                  ("Hares Pred", as, ts), ("Lynxes Pred", bs, ts)] :: [(String, [Double], [Double])])
-    -- _ <-  [r| c6_hs + geom_point(aes(x=es_hs, y=fs_hs)) |]
-    -- _ <-  [r| ggsave(filename="diagrams/Posterior.png") |]
-
     d1 <- [r| c0_hs + ggtitle("Hares and Lynxes") |]
     d2 <- [r| d1_hs + xlab("Year") |]
     d3 <- [r| d2_hs + ylab("Animals (000s)") |]
     d4 <- [r| d3_hs + labs(colour = "Species") |]
     d5 <- [r| d4_hs + theme(plot.title = element_text(hjust = 0.5)) |]
-    _  <- foldM (\c (n, rr, tt) -> do
+    _  <- foldM (\_ (n, rr, tt) -> do
                         [r| d5_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
                 c5 ([("Gamma", gammas1, ts)] :: [(String, [Double], [Double])])
     _  <-  [r| ggsave(filename="diagrams/Gamma.png") |]
 
-    -- _  <- foldM (\c (n, rr, tt) -> do
-    --                     [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
-    --             c5 ([("Predicted Hares", rs!!0, vs), ("Predicted Lynxes", rs!!1, vs)] :: [(String, [Double], [Double])])
-    -- _ <- [r| ggsave(filename="diagrams/ExampleLvSolution.png") |]
+    _  <- foldM (\c (n, rr, tt) -> do
+                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                c5 ([("Predicted Hares", rs!!0, vs), ("Predicted Lynxes", rs!!1, vs)] :: [(String, [Double], [Double])])
+    _ <- [r| ggsave(filename="diagrams/ExampleLvSolution.png") |]
 
-    -- _  <- foldM (\c (n, rr, tt) -> do
-    --             [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
-    --             c5 uu
-    -- _ <- [r| ggsave(filename="diagrams/LvParticles.png") |]
     return ()
 
 defaultOpts :: method -> ODEOpts method
@@ -422,9 +387,6 @@ $$
 
 %if False
 \begin{code}
-data SystemState a = SystemState { hares  :: a, lynxes  :: a, gamma :: a}
-  deriving Show
-
 data SystemState1 a = SystemState1 { hares1  :: a, lynxes1  :: a, alpha1 :: a, beta1 :: a, delta1 :: a, gamma1 :: a}
   deriving (Show, Functor, Foldable)
 
@@ -433,86 +395,6 @@ data SystemObs a = SystemObs { obsHares  :: a, obsLynxes :: a}
 
 nParticles :: Int
 nParticles = 1000
-
-m0 :: Vector Double
-m0 = vector [30.0, 4.0, 2.5e-2]
-
-bigP :: Herm Double
-bigP = sym $ (3><3) [ 4.0e-1, 0.0,    0.0,
-                      0.0,    4.0e-1, 0.0,
-                      0.0,    0.0,    4.0e-4
-                    ]
-
-initParticles :: R.MonadRandom m =>
-                 m (Particles (SystemState Double))
-initParticles = V.replicateM nParticles $ do
-  rr <- R.sample $ R.rvar (Normal m0 bigP)
-  let h = rr!0
-      l = rr!1
-      g = rr!2
-  return $ SystemState { hares = h, lynxes = l, gamma = g}
-
-lotkaVolterra' :: SystemState Double -> OdeProblem
-lotkaVolterra' s = emptyOdeProblem
-  { odeRhs = odeRhsPure $ \t x -> fromList (dzdt (meanRate {theta4 = coerce $ gamma s}) t (toList x))
-  , odeJacobian = Nothing
-  , odeEventHandler = nilEventHandler
-  , odeMaxEvents = 0
-  , odeInitCond = vector [hares s, lynxes s]
-  , odeSolTimes = vector us
-  , odeTolerances = defaultTolerances
-  }
-
-sol' :: SystemState Double -> IO (Matrix Double)
-sol' s = do
-  handleScribe <- mkHandleScribe ColorIfTerminal stderr (permitItem InfoS) V2
-  logEnv <- registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "namespace" "devel"
-  w <- runKatipT logEnv $ solve (defaultOpts BOGACKI_SHAMPINE_4_2_3) (lotkaVolterra' s)
-  case w of
-    Left e  -> error $ show e
-    Right y -> return (solutionMatrix y)
-
-
-lotkaVolterra'' :: [Double] -> SystemState Double -> OdeProblem
-lotkaVolterra'' ts s = emptyOdeProblem
-  { odeRhs = odeRhsPure $ \t x -> fromList (dzdt (meanRate {theta4 = coerce $ gamma s}) t (toList x))
-  , odeJacobian = Nothing
-  , odeEventHandler = nilEventHandler
-  , odeMaxEvents = 0
-  , odeInitCond = vector [hares s, lynxes s]
-  , odeSolTimes = vector ts
-  , odeTolerances = defaultTolerances
-  }
-
-sol'' :: [Double] -> SystemState Double -> IO (Matrix Double)
-sol'' ts s = do
-  handleScribe <- mkHandleScribe ColorIfTerminal stderr (permitItem InfoS) V2
-  logEnv <- registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "namespace" "devel"
-  w <- runKatipT logEnv $ solve (defaultOpts BOGACKI_SHAMPINE_4_2_3) (lotkaVolterra'' ts s)
-  case w of
-    Left e  -> error $ show e
-    Right y -> return (solutionMatrix y)
-
-stateUpdate :: Particles (SystemState Double) -> IO (Particles (SystemState Double))
-stateUpdate ps = do
-  qs <-  V.mapM (sol'' (take 21 us)) ps
-  rr <- V.replicateM nParticles $
-        R.sample $ R.rvar (RN.Normal 0.0 ((unSym bigP)!2!2))
-  rrH <- V.replicateM nParticles $
-         R.sample $ R.rvar (RN.Normal 0.0 ((unSym bigP)!0!0))
-  rrL <- V.replicateM nParticles $
-         R.sample $ R.rvar (RN.Normal 0.0 ((unSym bigP)!1!1))
-
-  let newHLs = V.map (\m -> m!20) qs
-      newGammas = V.zipWith (\p q -> gamma p + q) ps rr
-      newHares  = V.zipWith (+) (V.map (!0) newHLs) rrH
-      newLynxes = V.zipWith (+) (V.map (!1) newHLs) rrL
-      newStates = V.zipWith3 (\h l m -> SystemState {hares = h, lynxes = l, gamma = m})
-                             newHares newLynxes newGammas
-  return newStates
-
-measureOp :: Particles (SystemState Double) -> Particles (SystemObs Double)
-measureOp = V.map (\s -> SystemObs { obsHares = hares s, obsLynxes = lynxes s})
 
 measureOpL :: Particles (SystemState1 Double) -> Particles (SystemObs Double)
 measureOpL = V.map (\s -> SystemObs { obsHares = exp $ hares1 s, obsLynxes = exp $ lynxes1 s})
