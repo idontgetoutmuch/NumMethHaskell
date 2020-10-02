@@ -36,8 +36,8 @@
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DeriveFunctor        #-}
-{-# LANGUAGE DeriveFoldable        #-}
+{-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE DeriveFoldable      #-}
 
 {-# OPTIONS_GHC -Wall          #-}
 
@@ -290,24 +290,37 @@ $$
 \end{bmatrix}
 $$
 
-\begin{code}
-stateUpdateL :: Particles (SystemState Double) -> IO (Particles (SystemState Double))
-stateUpdateL ps = do
-  qs <-  V.mapM (sol' (take 21 us)) (V.map (F.toList . fmap exp) ps)
-  rr <- V.replicateM nParticles $
-        R.sample $ R.rvar (Normal (vector (replicate 6 0.0)) (sym $ (6><6) bigQ))
+Note that in order to avoid values being negative we work in log
+  space. Thus in the state update function below we first exponentiate
+  the values before using a solver to move the state forwards in time
+  by one time step and the log these new values before adding the
+  state noise.
 
-  let ms :: V.Vector (Vector Double)
-      ms = V.map (log . (!20)) qs
-      ns = V.zipWith3 (\p q u -> SystemState { alpha  = u!0 + alpha q
-                                              , beta   = u!1 + beta q
-                                              , delta  = u!2 + delta q
-                                              , gamma  = u!3 + gamma q
-                                              , hares  = u!4 + p!0
-                                              , lynxes = u!5 + p!1
-                                              })
-                      ms ps rr
-  return ns
+Note also that |alpha, beta, delta| and |gamma| are kept constant
+  apart from the addition of the noise; the solver only updates the
+  numbers of hares and lynxes according to the Lotka-Volterra
+  equation.
+
+\begin{code}
+stateUpdate :: Particles (SystemState Double) -> IO (Particles (SystemState Double))
+stateUpdate ps = do
+
+  let timeSteps = [0.0, 1.0]
+  qs <-  V.mapM (sol' timeSteps) (V.map (F.toList . fmap exp) ps)
+  let rs = V.map (log . (!1)) qs
+
+  eps <- V.replicateM nParticles $
+         R.sample $ R.rvar (Normal (vector (replicate 6 0.0)) (sym $ (6><6) bigQ))
+
+  let f x y e =
+        SystemState { alpha  = e!0 + alpha y,
+                      beta   = e!1 + beta  y,
+                      delta  = e!2 + delta y,
+                      gamma  = e!3 + gamma y,
+                      hares  = e!4 + x!0,
+                      lynxes = e!5 + x!1
+                    }
+  return $ V.zipWith3 f rs ps eps
 \end{code}
 
 \begin{figure}[h]
@@ -365,15 +378,15 @@ lotkaVolterra h l = emptyOdeProblem
   , odeEventHandler = nilEventHandler
   , odeMaxEvents = 0
   , odeInitCond = vector [h, l]
-  , odeSolTimes = vector us
+  , odeSolTimes = vector uss
   , odeTolerances = defaultTolerances
   }
 
-us :: [Double]
-us = map (* 0.05) $ map fromIntegral ([0 .. 400] :: [Int])
+uss :: [Double]
+uss = map (* 0.05) $ map fromIntegral ([0 .. 400] :: [Int])
 
 vs :: [Double]
-vs = map (+ 1900) us
+vs = map (+ 1900) uss
 
 sol :: Double -> Double -> IO (Matrix Double)
 sol h l = do
@@ -541,7 +554,7 @@ sol' ts s = do
 testL :: IO (V.Vector Double, V.Vector Double, V.Vector (Particles (SystemState Double)))
 testL = do
   is <- initParticles
-  foo <- scanMapM (runPF stateUpdateL measureOpL weight) return (V.map (fmap log) is) (V.drop 1 predPreyObs')
+  foo <- scanMapM (runPF stateUpdate measureOpL weight) return (V.map (fmap log) is) (V.drop 1 predPreyObs')
   let as = V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map hares lls) foo
   let bs = V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map lynxes lls) foo
   return (as, bs, foo)
