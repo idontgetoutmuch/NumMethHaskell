@@ -1,6 +1,21 @@
 # nix-shell -I nixpkgs=https://github.com/NixOS/nixpkgs-channels/archive/nixos-20.03.tar.gz minimal.nix
 
-let overlay1 = self: super:
+let
+
+# nixpkgsRev = "bc260badaebf67442befe20fb443034d3a91f2b3"; # 20.09-beta
+# nixpkgsSha256 = "1iysc4xyk88ngkfb403xfq5bs3zy29zfs83pn99kchxd45nbpb5q";
+
+# mixpkgs = fetchTarball {
+#   url = "https://github.com/nixos/nixpkgs/archive/${nixpkgsRev}.tar.gz";
+#   sha256 = nixpkgsSha256;
+# };
+
+# mixpkgs = fetchTarball {
+#   url = "https://github.com/NixOS/nixpkgs-channels/archive/nixos-20.03.tar.gz";
+#   sha256 = "1qbs7p0mmcmpg70ibd437hl57byqx5q0pc61p1dckrkazj7kq0pc";
+# };
+
+overlay1 = self: super:
 {
   sundials1 = self.callPackage ./SparseSundials { };
 };
@@ -32,6 +47,14 @@ myHaskellPackageOverlay = self: super: {
             v = hself.callCabal2nix "vinyl" newVinylSrc {};
           in
             super.haskell.lib.dontCheck v;
+
+      # inline-r =
+      #   let newInlineRSrc = builtins.fetchTarball { url = "https://hackage.haskell.org/package/inline-r-0.10.3/inline-r-0.10.3.tar.gz";
+      #     sha256 = "10v4d6ka27pxi54zcq1c3ic140v9dx6lb62l5dmxjmlb6522n3g7";
+      #     };
+      #       ir = hself.callCabal2nix "inline-r" newInlineRSrc {};
+      #     in
+      #       super.haskell.lib.dontCheck ir;
 
       kalman1 = super.haskell.lib.dontCheck (
         hself.callCabal2nix "kalman" (builtins.fetchGit {

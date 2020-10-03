@@ -12,7 +12,7 @@
 %format delta = "\delta"
 %format gamma = "\gamma"
 %format bigQ  = "Q"
-%format m0    = "m_0"
+%format m0    = "\mu_0"
 
 \title{Filtering Estimation Example}
 \author{Dominic Steinitz}
@@ -39,7 +39,9 @@
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE DeriveFoldable      #-}
 
-{-# OPTIONS_GHC -Wall          #-}
+{-# OPTIONS_GHC -Wall                     #-}
+{-# OPTIONS_GHC -fno-warn-orphans         #-}
+{-# OPTIONS_GHC -fno-warn-missing-methods #-}
 
 module LotkaVolterra (main) where
 
@@ -201,7 +203,7 @@ where again $W^l_t$ and $W^h_t$ are Brownian Motion, this time
  be normal or additive but trying to make everything as general as
  possible will only obscure matters.}.
 
-What we want to estimate is $x_t, y_t, \alpha_t, \beta_t, delta_t$ and
+What we want is to estimate is $x_t, y_t, \alpha_t, \beta_t, \delta_t$ and
  $\gamma_t$ given $u_t$ and $v_t$, the numbers of hares and lynxes
  given at times $t_0, t_1, \ldots, t_N$.
 
@@ -262,33 +264,7 @@ Here's the state update notated slightly differently
 
 where $\mathbf{W}$ is Brownian Motion and $\mathbf{Q}$ is a covariance matrix.
 
-There is no reason to expect any correlations so informed by the
-  results in
-  \href{https://mc-stan.org/users/documentation/case-studies/lotka-volterra-predator-prey.html}{Predator-Prey
-  Population Dynamics: the Lotka-Volterra model in Stan} let us take
-  the state update covariance to be
-
-$$
-\mathbf{Q} =
-\begin{bmatrix}
-\eval{bigQ!!0}  & \eval{bigQ!!1}  & \eval{bigQ!!2}  & \eval{bigQ!!3}  & \eval{bigQ!!4}  & \eval{bigQ!!5} \\
-\eval{bigQ!!6}  & \eval{bigQ!!7}  & \eval{bigQ!!8}  & \eval{bigQ!!9}  & \eval{bigQ!!10} & \eval{bigQ!!11} \\
-\eval{bigQ!!12} & \eval{bigQ!!13} & \eval{bigQ!!14} & \eval{bigQ!!15} & \eval{bigQ!!16} & \eval{bigQ!!17} \\
-\eval{bigQ!!18} & \eval{bigQ!!19} & \eval{bigQ!!20} & \eval{bigQ!!21} & \eval{bigQ!!22} & \eval{bigQ!!23} \\
-\eval{bigQ!!24} & \eval{bigQ!!25} & \eval{bigQ!!26} & \eval{bigQ!!27} & \eval{bigQ!!28} & \eval{bigQ!!29} \\
-\eval{bigQ!!30} & \eval{bigQ!!31} & \eval{bigQ!!32} & \eval{bigQ!!33} & \eval{bigQ!!34} & \eval{bigQ!!35}
-\end{bmatrix}
-$$
-
-We take the observation noise to be given by
-
-$$
-\mathbf{R} =
-\begin{bmatrix}
-\eval{(unSym bigR)!0!0} & \eval{(unSym bigR)!0!1} \\
-\eval{(unSym bigR)!1!0} & \eval{(unSym bigR)!1!1}
-\end{bmatrix}
-$$
+\subsection{State Update Function}
 
 Note that in order to avoid values being negative we work in log
   space. Thus in the state update function below we first exponentiate
@@ -313,15 +289,35 @@ stateUpdate ps = do
          R.sample $ R.rvar (Normal (vector (replicate 6 0.0)) (sym $ (6><6) bigQ))
 
   let f x y e =
-        SystemState { alpha  = e!0 + alpha y,
-                      beta   = e!1 + beta  y,
-                      delta  = e!2 + delta y,
-                      gamma  = e!3 + gamma y,
-                      hares  = e!4 + x!0,
-                      lynxes = e!5 + x!1
-                    }
+        SystemState {
+          alpha   = e!0 + alpha y,
+          beta    = e!1 + beta  y,
+          delta   = e!2 + delta y,
+          gamma   = e!3 + gamma y,
+          hares   = e!4 + x!0,
+          lynxes  = e!5 + x!1
+          }
   return $ V.zipWith3 f rs ps eps
 \end{code}
+
+
+ There is no reason to expect any correlations so informed by the
+  results in
+  \href{https://mc-stan.org/users/documentation/case-studies/lotka-volterra-predator-prey.html}{Predator-Prey
+  Population Dynamics: the Lotka-Volterra model in Stan} let us take
+  the state update covariance to be
+
+$$
+\mathbf{Q} =
+\begin{bmatrix}
+\eval{bigQ!!0}  & \eval{bigQ!!1}  & \eval{bigQ!!2}  & \eval{bigQ!!3}  & \eval{bigQ!!4}  & \eval{bigQ!!5} \\
+\eval{bigQ!!6}  & \eval{bigQ!!7}  & \eval{bigQ!!8}  & \eval{bigQ!!9}  & \eval{bigQ!!10} & \eval{bigQ!!11} \\
+\eval{bigQ!!12} & \eval{bigQ!!13} & \eval{bigQ!!14} & \eval{bigQ!!15} & \eval{bigQ!!16} & \eval{bigQ!!17} \\
+\eval{bigQ!!18} & \eval{bigQ!!19} & \eval{bigQ!!20} & \eval{bigQ!!21} & \eval{bigQ!!22} & \eval{bigQ!!23} \\
+\eval{bigQ!!24} & \eval{bigQ!!25} & \eval{bigQ!!26} & \eval{bigQ!!27} & \eval{bigQ!!28} & \eval{bigQ!!29} \\
+\eval{bigQ!!30} & \eval{bigQ!!31} & \eval{bigQ!!32} & \eval{bigQ!!33} & \eval{bigQ!!34} & \eval{bigQ!!35}
+\end{bmatrix}
+$$
 
 \begin{figure}[h]
 \centering
@@ -329,6 +325,41 @@ stateUpdate ps = do
 \caption{Fitting the State}
 \label{fig:fitting_state_0}
 \end{figure}
+
+\subsection{Observation Model Functions}
+
+The observation model is given by two functions:
+
+\begin{enumerate}
+\item One which maps the (hidden) state into observations
+\item And another which measures how far the actual observation is from the observation predicted by the state model.
+\end{enumerate}
+
+As already pointed out above, the measurement model selects the number
+  of hares and lynxes; the parameters are hidden state. We have to
+  remember that the state is in log space but the actual observations
+  are not.
+
+\begin{code}
+measure :: Particles (SystemState Double) -> Particles (SystemObs Double)
+measure = V.map (\s -> SystemObs { obsHares = hares s, obsLynxes = lynxes s})
+
+weight :: SystemObs Double -> SystemObs Double -> Double
+weight obs predicted = R.pdf (Normal xs bigR) ys
+  where
+    xs = vector [log $ obsHares obs, log $ obsLynxes obs]
+    ys = vector [obsHares predicted, obsLynxes predicted]
+\end{code}
+
+We take the observation noise to be given by
+
+$$
+\mathbf{R} =
+\begin{bmatrix}
+\eval{(unSym bigR)!0!0} & \eval{(unSym bigR)!0!1} \\
+\eval{(unSym bigR)!1!0} & \eval{(unSym bigR)!1!1}
+\end{bmatrix}
+$$
 
 \subsection{Initial Distributions}
 
@@ -361,14 +392,14 @@ meanRate :: Floating a => Rate a
 meanRate = Rate { theta1 = 0.5, theta2 = 0.025, theta3 = 0.8, theta4 = 0.025 }
 
 dzdt :: (Show a, Floating a) => Rate a -> a -> [a] -> [a]
-dzdt x _t [u, v] = [ (alpha - beta * v) * u
-                   , (-gamma + delta * u) * v
+dzdt x _t [u, v] = [ (a - b * v) * u
+                   , (-d + c * u) * v
                    ]
   where
-    alpha = theta1 x
-    beta = theta2 x
-    delta = theta4 x
-    gamma = theta3 x
+    a = theta1 x
+    b  = theta2 x
+    c = theta4 x
+    d = theta3 x
 dzdt _x _t xs = error $ show xs
 
 lotkaVolterra :: Double -> Double -> OdeProblem
@@ -405,7 +436,10 @@ main = do
       ks = map snd $ map snd predPreyObs
   y <- sol (hs!!0) (ks!!0)
   let rs = transpose $ toLists y
-  (as1, bs1, cs1) <- testL
+  cs1 <- test
+  let as1 = V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map hares lls) cs1
+  let bs1 = V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map lynxes lls) cs1
+
   let preDs1 = V.toList $ V.map V.toList $ V.map (V.map (exp . hares)) cs1
       ds1 = concat $ zipWith (\t ws -> zip (repeat t) ws) ts preDs1
       es1 = map fst ds1
@@ -503,20 +537,11 @@ data SystemObs a = SystemObs { obsHares  :: a, obsLynxes :: a}
   deriving Show
 
 nParticles :: Int
-nParticles = 1000
-
-measureOpL :: Particles (SystemState Double) -> Particles (SystemObs Double)
-measureOpL = V.map (\s -> SystemObs { obsHares = exp $ hares s, obsLynxes = exp $ lynxes s})
-
-weight :: SystemObs Double -> SystemObs Double -> Double
-weight obs predicted = R.pdf (Normal xs bigR) ys
-  where
-    xs = vector [obsHares obs, obsLynxes obs]
-    ys = vector [obsHares predicted, obsLynxes predicted]
+nParticles = 10
 
 bigR :: Herm Double
-bigR = sym $ (2><2) [ 10.0e-1, 0.0,
-                      0.0,    10.0e-1
+bigR = sym $ (2><2) [ 10.0e-3, 0.0,
+                      0.0,    10.0e-3
                     ]
 
 scanMapM :: Monad m => (s -> a -> m s) -> (s -> m b) -> s -> V.Vector a -> m (V.Vector b)
@@ -551,21 +576,18 @@ sol' ts s = do
     Left e  -> error $ show e
     Right y -> return (solutionMatrix y)
 
-testL :: IO (V.Vector Double, V.Vector Double, V.Vector (Particles (SystemState Double)))
-testL = do
+test :: IO (V.Vector (Particles (SystemState Double)))
+test = do
   is <- initParticles
-  foo <- scanMapM (runPF stateUpdate measureOpL weight) return (V.map (fmap log) is) (V.drop 1 predPreyObs')
-  let as = V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map hares lls) foo
-  let bs = V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map lynxes lls) foo
-  return (as, bs, foo)
+  scanMapM (runPF stateUpdate measure weight) return (V.map (fmap log) is) (V.drop 1 predPreyObs')
 
 bigQ :: [Double]
 bigQ = [ 1.0e-2, 0.0,    0.0,    0.0,    0.0,    0.0
        , 0.0,    5.0e-3, 0.0,    0.0,    0.0,    0.0
        , 0.0,    0.0,    1.0e-2, 0.0,    0.0,    0.0
        , 0.0,    0.0,    0.0,    5.0e-3, 0.0,    0.0
-       , 0.0,    0.0,    0.0,    0.0,    1.0e-1, 0.0
-       , 0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-1
+       , 0.0,    0.0,    0.0,    0.0,    1.0e-2, 0.0
+       , 0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-2
        ]
 \end{code}
 %endif
