@@ -319,13 +319,6 @@ $$
 \end{bmatrix}
 $$
 
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.8\textwidth]{diagrams/HudsonBayFit.png}
-\caption{Fitting the State}
-\label{fig:fitting_state_0}
-\end{figure}
-
 \subsection{Observation Model Functions}
 
 The observation model is given by two functions:
@@ -373,7 +366,7 @@ We can create initial distributions from a (multivariate) normal
 
 \begin{code}
 m0 :: [Double]
-m0 = fmap log [0.5, 0.025, 0.8, 0.025, 30, 4]
+m0 = fmap log [0.5, 0.025, 0.8, 0.040, 30, 4]
 
 initParticles :: R.MonadRandom m =>
                  m (Particles (SystemState Double))
@@ -382,6 +375,47 @@ initParticles = V.replicateM nParticles $ do
   return $ fmap exp $
     SystemState { alpha  = x!0, beta   = x!1, delta  = x!2, gamma  = x!3, hares  = x!4, lynxes = x!5 }
 \end{code}
+
+We can now run the filter with the data:
+
+\begin{code}
+runFilter :: IO (V.Vector (Particles (SystemState Double)))
+runFilter = do
+  is <- initParticles
+  scanMapM (runPF stateUpdate measure weight) return (V.map (fmap log) is) (V.drop 1 predPreyObs')
+\end{code}
+
+This returns a set of particles at each observation. We can plot the
+   means of the updated distributions of the hares and lynxes against
+   the actual observations as shown in
+   Figure~\ref{fig:fitting_state_0}. Note this shows the posterior
+   distributions which we would expect to give means that are close to
+   observation that has been used to inform it.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{diagrams/HudsonBayFit.png}
+\caption{Fitting the State}
+\label{fig:fitting_state_0}
+\end{figure}
+
+We can also plot the numbers of hares and lynxes with some measure of
+ how confident we are with the estimates by plotting the means plus or
+ minus twice the standard deviation as shown in
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{diagrams/HudsonBayHareVar.png}
+\caption{Hare Standard Deviation}
+\label{fig:hare_std}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{diagrams/HudsonBayLynxVar.png}
+\caption{Lynx Standard Deviation}
+\label{fig:lynx_std}
+\end{figure}
 
 %if False
 \begin{code}
@@ -436,56 +470,83 @@ main = do
       ks = map snd $ map snd predPreyObs
   y <- sol (hs!!0) (ks!!0)
   let rs = transpose $ toLists y
-  cs1 <- test
+  cs1 <- runFilter
   let as1 = V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map hares lls) cs1
+      as2 = V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map (^2) $ V.map exp $ V.map hares lls) cs1
+      as3 = V.zipWith (\x2 x1 -> sqrt (x2 - x1^2)) as2 as1
+      as4 = V.zipWith (\m s -> m + 2 * s) as1 as3
+      as5 = V.zipWith (\m s -> m - 2 * s) as1 as3
   let bs1 = V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map lynxes lls) cs1
-
-  let preDs1 = V.toList $ V.map V.toList $ V.map (V.map (exp . hares)) cs1
-      ds1 = concat $ zipWith (\t ws -> zip (repeat t) ws) ts preDs1
-      es1 = map fst ds1
-      fs1 = map snd ds1
+      bs2 = V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map (^2) $V.map exp $ V.map lynxes lls) cs1
+      bs3 = V.zipWith (\x2 x1 -> sqrt (x2 - x1^2)) bs2 bs1
+      bs4 = V.zipWith (\m s -> m + 2 * s) bs1 bs3
+      bs5 = V.zipWith (\m s -> m - 2 * s) bs1 bs3
+      alphas1 = V.toList $
+                V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map alpha lls) cs1
+      betas1 = V.toList $
+                V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map beta lls) cs1
+      deltas1 = V.toList $
+                V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map delta lls) cs1
       gammas1 = V.toList $
                 V.map (\lls -> (* (1 / (fromIntegral nParticles))) $ sum $ V.map exp $ V.map gamma lls) cs1
 
   R.runRegion $ do
     _ <- [r| library(ggplot2) |]
     c0 <- [r| ggplot() |]
+
     c1 <- [r| c0_hs + ggtitle("Hares and Lynxes") |]
     c2 <- [r| c1_hs + xlab("Year") |]
     c3 <- [r| c2_hs + ylab("Animals (000s)") |]
     c4 <- [r| c3_hs + labs(colour = "Species") |]
     c5 <- [r| c4_hs + theme(plot.title = element_text(hjust = 0.5)) |]
-    _  <- foldM (\c (n, rr, tt) -> do
-                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
-                c5 ([ ("Hares", hs, ts), ("Lynxes", ks, ts) ] :: [(String, [Double], [Double])])
-    _ <-  [r| ggsave(filename="diagrams/HudsonBay.png") |]
-
-    e1 <- [r| c0_hs + ggtitle("Hares and Lynxes") |]
-    e2 <- [r| e1_hs + xlab("Year") |]
-    e3 <- [r| e2_hs + ylab("Animals (000s)") |]
-    e4 <- [r| e3_hs + labs(colour = "Species") |]
-    e5 <- [r| e4_hs + theme(plot.title = element_text(hjust = 0.5)) |]
-    e6 <- foldM (\c (n, rr, tt) -> do
-                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
-                e5 ([ ("Hares", hs, ts), ("Lynxes", ks, ts)
-                    , ("HaresL", (V.toList as1), ts), ("LynxesL", (V.toList bs1), ts) ] :: [(String, [Double], [Double])])
-    _ <-  [r| e6_hs + geom_point(aes(x=es1_hs, y=fs1_hs)) |]
-    _ <-  [r| ggsave(filename="diagrams/HudsonBayFit.png") |]
-
-    d1 <- [r| c0_hs + ggtitle("Hares and Lynxes") |]
-    d2 <- [r| d1_hs + xlab("Year") |]
-    d3 <- [r| d2_hs + ylab("Animals (000s)") |]
-    d4 <- [r| d3_hs + labs(colour = "Species") |]
-    d5 <- [r| d4_hs + theme(plot.title = element_text(hjust = 0.5)) |]
-    _  <- foldM (\_ (n, rr, tt) -> do
-                        [r| d5_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
-                c5 ([("Gamma", gammas1, ts)] :: [(String, [Double], [Double])])
-    _  <-  [r| ggsave(filename="diagrams/Gamma.png") |]
 
     _  <- foldM (\c (n, rr, tt) -> do
                         [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
                 c5 ([("Predicted Hares", rs!!0, vs), ("Predicted Lynxes", rs!!1, vs)] :: [(String, [Double], [Double])])
     _ <- [r| ggsave(filename="diagrams/ExampleLvSolution.png") |]
+
+    _  <- foldM (\c (n, rr, tt) -> do
+                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                c5 ([ ("Hares", hs, ts), ("Lynxes", ks, ts) ] :: [(String, [Double], [Double])])
+    _ <-  [r| ggsave(filename="diagrams/HudsonBay.png") |]
+
+    _  <- foldM (\c (n, rr, tt) -> do
+                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                c5 ([ ("Measured Hares", hs, ts), ("Measured Lynxes", ks, ts)
+                    , ("Mean Posterior Hares", (V.toList as1), ts), ("Mean Posterior Lynxes", (V.toList bs1), ts) ] :: [(String, [Double], [Double])])
+    _ <-  [r| ggsave(filename="diagrams/HudsonBayFit.png") |]
+
+    _  <- foldM (\c (n, rr, tt) -> do
+                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                c5 ([ ("Hares", hs, ts), ("Mean Posterior Hares", (V.toList as1), ts)
+                    , ("Hares + 2 STD", (V.toList as4), ts), ("Hares - 2 STD", (V.toList as5), ts) ] :: [(String, [Double], [Double])])
+    _ <-  [r| ggsave(filename="diagrams/HudsonBayHareVar.png") |]
+
+    _  <- foldM (\c (n, rr, tt) -> do
+                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                c5 ([ ("Lynxes", ks, ts), ("Mean Posterior Lynxes", (V.toList bs1), ts)
+                    , ("Lynxes + 2 STD", (V.toList bs4), ts), ("Lynxes - 2 STD", (V.toList bs5), ts) ] :: [(String, [Double], [Double])])
+    _ <-  [r| ggsave(filename="diagrams/HudsonBayLynxVar.png") |]
+
+    _  <- foldM (\_ (n, rr, tt) -> do
+                        [r| c5_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                c5 ([("Alpha", alphas1, ts)] :: [(String, [Double], [Double])])
+    _  <-  [r| ggsave(filename="diagrams/Alpha.png") |]
+
+    _  <- foldM (\_ (n, rr, tt) -> do
+                        [r| c5_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                c5 ([("Beta", betas1, ts)] :: [(String, [Double], [Double])])
+    _  <-  [r| ggsave(filename="diagrams/Beta.png") |]
+
+    _  <- foldM (\_ (n, rr, tt) -> do
+                        [r| c5_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                c5 ([("Delta", deltas1, ts)] :: [(String, [Double], [Double])])
+    _  <-  [r| ggsave(filename="diagrams/Delta.png") |]
+
+    _  <- foldM (\_ (n, rr, tt) -> do
+                        [r| c5_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                c5 ([("Gamma", gammas1, ts)] :: [(String, [Double], [Double])])
+    _  <-  [r| ggsave(filename="diagrams/Gamma.png") |]
 
     return ()
 
@@ -537,7 +598,7 @@ data SystemObs a = SystemObs { obsHares  :: a, obsLynxes :: a}
   deriving Show
 
 nParticles :: Int
-nParticles = 10
+nParticles = 1000
 
 bigR :: Herm Double
 bigR = sym $ (2><2) [ 10.0e-3, 0.0,
@@ -575,11 +636,6 @@ sol' ts s = do
   case w of
     Left e  -> error $ show e
     Right y -> return (solutionMatrix y)
-
-test :: IO (V.Vector (Particles (SystemState Double)))
-test = do
-  is <- initParticles
-  scanMapM (runPF stateUpdate measure weight) return (V.map (fmap log) is) (V.drop 1 predPreyObs')
 
 bigQ :: [Double]
 bigQ = [ 1.0e-2, 0.0,    0.0,    0.0,    0.0,    0.0
