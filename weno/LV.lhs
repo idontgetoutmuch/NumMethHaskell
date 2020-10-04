@@ -133,8 +133,7 @@ where $x$ is the number of prey, $y$ is the number of predators,
 \subsection{Solving Lotka-Volterra}
 
 We can solve the Lotka-Volterra model using the Haskell bindings to
-  SUNDIALS. The use of the {\em{Bogacki Shampine}} method is entirely
-  arbitrary. The results are shown in Figure \ref{fig:examplelvsolution_0}.
+   SUNDIALS. The results are shown in Figure~\ref{fig:examplelvsolution_0}.
 
 \begin{figure}[h]
 \centering
@@ -203,7 +202,7 @@ where again $W^l_t$ and $W^h_t$ are Brownian Motion, this time
  be normal or additive but trying to make everything as general as
  possible will only obscure matters.}.
 
-What we want is to estimate is $x_t, y_t, \alpha_t, \beta_t, \delta_t$ and
+What we want is to estimate $x_t, y_t, \alpha_t, \beta_t, \delta_t$ and
  $\gamma_t$ given $u_t$ and $v_t$, the numbers of hares and lynxes
  given at times $t_0, t_1, \ldots, t_N$.
 
@@ -366,7 +365,7 @@ We can create initial distributions from a (multivariate) normal
 
 \begin{code}
 m0 :: [Double]
-m0 = fmap log [0.5, 0.025, 0.8, 0.040, 30, 4]
+m0 = fmap log [0.5, 0.025, 0.8, 0.025, 30, 4]
 
 initParticles :: R.MonadRandom m =>
                  m (Particles (SystemState Double))
@@ -382,7 +381,8 @@ We can now run the filter with the data:
 runFilter :: IO (V.Vector (Particles (SystemState Double)))
 runFilter = do
   is <- initParticles
-  scanMapM (runPF stateUpdate measure weight) return (V.map (fmap log) is) (V.drop 1 predPreyObs')
+  scanMapM (runPF stateUpdate measure weight)
+           return (V.map (fmap log) is) (V.drop 1 predPreyObs')
 \end{code}
 
 This returns a set of particles at each observation. We can plot the
@@ -400,8 +400,9 @@ This returns a set of particles at each observation. We can plot the
 \end{figure}
 
 We can also plot the numbers of hares and lynxes with some measure of
- how confident we are with the estimates by plotting the means plus or
- minus twice the standard deviation as shown in
+  how confident we are with the estimates by plotting the means plus
+  or minus twice the standard deviation as shown in
+  Figures~\ref{fig:hare_std} and \ref{fig:lynx_std}.
 
 \begin{figure}[h]
 \centering
@@ -415,6 +416,40 @@ We can also plot the numbers of hares and lynxes with some measure of
 \includegraphics[width=0.8\textwidth]{diagrams/HudsonBayLynxVar.png}
 \caption{Lynx Standard Deviation}
 \label{fig:lynx_std}
+\end{figure}
+
+\section{Parameter Estimation}
+
+Of course, what we are really after are the parameters for the
+ model. These are shown in Figures~\ref{fig:alpha}, \ref{fig:beta},
+ \ref{fig:delta} and \ref{fig:gamma}.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{diagrams/Alpha.png}
+\caption{$\alpha$}
+\label{fig:alpha}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{diagrams/Beta.png}
+\caption{$\beta$}
+\label{fig:beta}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{diagrams/Delta.png}
+\caption{$\delta$}
+\label{fig:delta}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{diagrams/Gamma.png}
+\caption{$\gamma$}
+\label{fig:gamma}
 \end{figure}
 
 %if False
@@ -497,54 +532,54 @@ main = do
     c1 <- [r| c0_hs + ggtitle("Hares and Lynxes") |]
     c2 <- [r| c1_hs + xlab("Year") |]
     c3 <- [r| c2_hs + ylab("Animals (000s)") |]
-    c4 <- [r| c3_hs + labs(colour = "Species") |]
+    c4 <- [r| c3_hs + labs(colour = "Labels") |]
     c5 <- [r| c4_hs + theme(plot.title = element_text(hjust = 0.5)) |]
 
     _  <- foldM (\c (n, rr, tt) -> do
-                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) + coord_cartesian(ylim = c(0, 100)) |])
                 c5 ([("Predicted Hares", rs!!0, vs), ("Predicted Lynxes", rs!!1, vs)] :: [(String, [Double], [Double])])
     _ <- [r| ggsave(filename="diagrams/ExampleLvSolution.png") |]
 
     _  <- foldM (\c (n, rr, tt) -> do
-                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs))  + coord_cartesian(ylim = c(0, 100)) |])
                 c5 ([ ("Hares", hs, ts), ("Lynxes", ks, ts) ] :: [(String, [Double], [Double])])
     _ <-  [r| ggsave(filename="diagrams/HudsonBay.png") |]
 
     _  <- foldM (\c (n, rr, tt) -> do
-                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs))  + coord_cartesian(ylim = c(0, 100)) |])
                 c5 ([ ("Measured Hares", hs, ts), ("Measured Lynxes", ks, ts)
                     , ("Mean Posterior Hares", (V.toList as1), ts), ("Mean Posterior Lynxes", (V.toList bs1), ts) ] :: [(String, [Double], [Double])])
     _ <-  [r| ggsave(filename="diagrams/HudsonBayFit.png") |]
 
     _  <- foldM (\c (n, rr, tt) -> do
-                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs))  + coord_cartesian(ylim = c(0, 100)) |])
                 c5 ([ ("Hares", hs, ts), ("Mean Posterior Hares", (V.toList as1), ts)
                     , ("Hares + 2 STD", (V.toList as4), ts), ("Hares - 2 STD", (V.toList as5), ts) ] :: [(String, [Double], [Double])])
     _ <-  [r| ggsave(filename="diagrams/HudsonBayHareVar.png") |]
 
     _  <- foldM (\c (n, rr, tt) -> do
-                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                        [r| c_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs))  + coord_cartesian(ylim = c(0, 100)) |])
                 c5 ([ ("Lynxes", ks, ts), ("Mean Posterior Lynxes", (V.toList bs1), ts)
                     , ("Lynxes + 2 STD", (V.toList bs4), ts), ("Lynxes - 2 STD", (V.toList bs5), ts) ] :: [(String, [Double], [Double])])
     _ <-  [r| ggsave(filename="diagrams/HudsonBayLynxVar.png") |]
 
     _  <- foldM (\_ (n, rr, tt) -> do
-                        [r| c5_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                        [r| c5_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) + coord_cartesian(ylim = c(0, 1.0))|])
                 c5 ([("Alpha", alphas1, ts)] :: [(String, [Double], [Double])])
     _  <-  [r| ggsave(filename="diagrams/Alpha.png") |]
 
     _  <- foldM (\_ (n, rr, tt) -> do
-                        [r| c5_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                        [r| c5_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs))  + coord_cartesian(ylim = c(0, 0.05)) |])
                 c5 ([("Beta", betas1, ts)] :: [(String, [Double], [Double])])
     _  <-  [r| ggsave(filename="diagrams/Beta.png") |]
 
     _  <- foldM (\_ (n, rr, tt) -> do
-                        [r| c5_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                        [r| c5_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) + coord_cartesian(ylim = c(0, 1.2)) |])
                 c5 ([("Delta", deltas1, ts)] :: [(String, [Double], [Double])])
     _  <-  [r| ggsave(filename="diagrams/Delta.png") |]
 
     _  <- foldM (\_ (n, rr, tt) -> do
-                        [r| c5_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) |])
+                        [r| c5_hs + geom_line(aes(x = tt_hs, y = rr_hs, colour = n_hs)) + coord_cartesian(ylim = c(0, 0.05))|])
                 c5 ([("Gamma", gammas1, ts)] :: [(String, [Double], [Double])])
     _  <-  [r| ggsave(filename="diagrams/Gamma.png") |]
 
@@ -601,8 +636,8 @@ nParticles :: Int
 nParticles = 1000
 
 bigR :: Herm Double
-bigR = sym $ (2><2) [ 10.0e-3, 0.0,
-                      0.0,    10.0e-3
+bigR = sym $ (2><2) [ 1.0e-1, 0.0,
+                      0.0,    1.0e-1
                     ]
 
 scanMapM :: Monad m => (s -> a -> m s) -> (s -> m b) -> s -> V.Vector a -> m (V.Vector b)
